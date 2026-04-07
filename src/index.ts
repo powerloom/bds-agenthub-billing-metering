@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { type AppConfig, loadConfig } from "./config.js";
 import { createApp } from "./app.js";

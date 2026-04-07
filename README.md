@@ -20,6 +20,8 @@ npm run dev
 # or: node dist/index.js
 ```
 
+Environment variables are read from **`.env` in the process working directory** (`dotenv` at startup). Existing `process.env` values are not overwritten. For production, you can also set vars via systemd, Docker, or the shell instead of `.env`.
+
 ## Configuration (Turnstile / captcha)
 
 | Situation | Behavior |
