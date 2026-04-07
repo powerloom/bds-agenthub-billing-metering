@@ -15,7 +15,7 @@ try {
 const app = createApp(db, config);
 
 console.error(
-  `[bds-agent-signup] listening http://127.0.0.1:${config.port} (BASE_URL=${config.baseUrl})`,
+  `[bds-agenthub-billing-metering] listening http://127.0.0.1:${config.port} (BASE_URL=${config.baseUrl})`,
 );
 
 serve({

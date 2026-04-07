@@ -9,7 +9,7 @@ import type { SqliteDb } from "./types.js";
 export function createApp(db: SqliteDb, config: AppConfig) {
   const app = new Hono();
   app.get("/health", (c) =>
-    c.json({ ok: true, service: "bds-agent-signup", version: "0.1.0" }),
+    c.json({ ok: true, service: "bds-agenthub-billing-metering", version: "0.1.0" }),
   );
   app.route("/", createSignupRoutes(db, config));
   app.route("/", createVerifyRoutes(db, config));

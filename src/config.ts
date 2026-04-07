@@ -39,14 +39,14 @@ export function loadConfig(): AppConfig {
 
   if (isProd && !hasTurnstileKeys && !skipExplicit) {
     throw new Error(
-      "[bds-agent-signup] NODE_ENV=production requires TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY. " +
+      "[bds-agenthub-billing-metering] NODE_ENV=production requires TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY. " +
         "Or set SKIP_TURNSTILE=1 only for emergencies.",
     );
   }
 
   if (!hasTurnstileKeys && !isProd && !skipExplicit) {
     console.warn(
-      "[bds-agent-signup] TURNSTILE_* unset — captcha skipped (local dev). Set keys to test Turnstile.",
+      "[bds-agenthub-billing-metering] TURNSTILE_* unset — captcha skipped (local dev). Set keys to test Turnstile.",
     );
   }
 

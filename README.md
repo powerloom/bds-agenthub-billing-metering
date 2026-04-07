@@ -1,4 +1,4 @@
-# bds-agent-signup
+# bds-agenthub-billing-metering
 
 **Device-authorization** signup service for BDS agents (RFC 8628 style): human verifies once in a browser (captcha + ToS), agent receives an API key.
 
