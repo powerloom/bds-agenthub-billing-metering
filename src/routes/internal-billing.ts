@@ -75,8 +75,9 @@ export function createInternalBillingRoutes(db: SqliteDb, config: AppConfig) {
          WHERE id = ?`,
       ).run(amount, amount, row.id);
       db.prepare(
-        `INSERT INTO credit_transactions (id, api_key_id, amount, type, description, tempo_tx_hash, created_at)
-         VALUES (?, ?, ?, 'usage', ?, NULL, ?)`,
+        `INSERT INTO credit_transactions (
+           id, api_key_id, amount, type, description, tempo_tx_hash, tempo_chain_id, plan_id, created_at
+         ) VALUES (?, ?, ?, 'usage', ?, NULL, NULL, NULL, ?)`,
       ).run(txId, row.id, -amount, desc, now);
       const after = db
         .prepare(`SELECT credit_balance FROM api_keys WHERE id = ?`)

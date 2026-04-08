@@ -1,11 +1,41 @@
+import Database from "better-sqlite3";
 import { Hono } from "hono";
-import type { AppConfig } from "../config.js";
+import type { AppConfig, CreditPlan, CreditPlansBundle } from "../config.js";
+import { resolveCreditPlansBundle } from "../lib/credit-plans-resolve.js";
 import { extractApiKey, lookupApiKey } from "../lib/auth.js";
 import { randomUuid } from "../lib/crypto.js";
+import { parseDecimalToAtomicUnits } from "../lib/parse-units.js";
+import { createRateLimiter } from "../lib/rate-limit.js";
+import {
+  fetchChainId,
+  fetchReceipt,
+  receiptContainsTip20Payment,
+} from "../lib/tempo-rpc.js";
 import type { SqliteDb } from "../types.js";
+
+const HEX64 = /^0x[a-fA-F0-9]{64}$/;
+
+function normalizeTxHash(h: string): string {
+  const x = h.trim();
+  if (!HEX64.test(x)) {
+    throw new Error("invalid_tx_hash");
+  }
+  return x.toLowerCase();
+}
+
+function findPlan(bundle: CreditPlansBundle, planId: string): CreditPlan | undefined {
+  return bundle.plans.find(
+    (p) => p.id === planId && p.active && p.tempo_chain_id === bundle.tempo_chain_id,
+  );
+}
 
 export function createCreditsRoutes(db: SqliteDb, config: AppConfig) {
   const r = new Hono();
+  const topupLimiter = createRateLimiter(60_000, config.creditTopupRatePerMinute);
+
+  r.get("/credits/plans", (c) => {
+    return c.json(resolveCreditPlansBundle(db, config));
+  });
 
   r.get("/credits/balance", (c) => {
     const raw = extractApiKey(c);
@@ -39,49 +69,226 @@ export function createCreditsRoutes(db: SqliteDb, config: AppConfig) {
       return c.json({ error: "unauthorized", message: "Invalid or revoked API key" }, 401);
     }
 
+    const body = await c.req.json().catch(() => null);
+    const obj = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+
+    const planId = obj && typeof obj.plan_id === "string" ? obj.plan_id.trim() : "";
+    const tempoTxHashRaw = obj && typeof obj.tempo_tx_hash === "string" ? obj.tempo_tx_hash.trim() : "";
+    const tempoChainIdRaw = obj && obj.tempo_chain_id;
+    let tempoChainId = NaN;
+    if (typeof tempoChainIdRaw === "number" && Number.isFinite(tempoChainIdRaw)) {
+      tempoChainId = tempoChainIdRaw;
+    } else if (typeof tempoChainIdRaw === "string" && tempoChainIdRaw.trim() !== "") {
+      tempoChainId = Number(tempoChainIdRaw.trim());
+    }
+
+    const hasTempoPayload = Boolean(planId && tempoTxHashRaw && Number.isFinite(tempoChainId));
+
     const devSecret = config.devTopupSecret;
     const headerSecret = c.req.header("X-BDS-Dev-Topup-Secret") ?? "";
+    const wantsDev =
+      devSecret &&
+      headerSecret === devSecret &&
+      obj &&
+      typeof obj.amount === "number" &&
+      Number.isFinite(obj.amount);
 
-    if (!devSecret || headerSecret !== devSecret) {
-      return c.json(
-        {
-          error: "checkout_not_available",
-          message: "Self-serve credit purchase is not available yet. Use the billing link below when it is live.",
-          billing_url: config.billingTopupUrl,
-        },
-        501,
+    if (hasTempoPayload) {
+      const bundle = resolveCreditPlansBundle(db, config);
+      if (!bundle.tempo_recipient.trim()) {
+        return c.json(
+          {
+            error: "tempo_not_configured",
+            message: "Tempo credit purchase is not configured (MPP_TEMPO_RECIPIENT).",
+          },
+          503,
+        );
+      }
+
+      const lim = topupLimiter(`topup:${row.id}`);
+      if (!lim.ok) {
+        return c.json(
+          { error: "rate_limited", message: "Too many top-up attempts. Try again later.", retry_after_sec: lim.retryAfterSec },
+          429,
+        );
+      }
+
+      const plan = findPlan(bundle, planId);
+      if (!plan) {
+        return c.json({ error: "unknown_plan", message: `Unknown or inactive plan_id: ${planId}` }, 400);
+      }
+
+      if (Math.round(tempoChainId) !== bundle.tempo_chain_id) {
+        return c.json(
+          {
+            error: "chain_mismatch",
+            message: `tempo_chain_id must be ${bundle.tempo_chain_id} for this service.`,
+          },
+          400,
+        );
+      }
+
+      let txHash: string;
+      try {
+        txHash = normalizeTxHash(tempoTxHashRaw);
+      } catch {
+        return c.json({ error: "invalid_tx_hash", message: "tempo_tx_hash must be a 32-byte hex string with 0x prefix." }, 400);
+      }
+
+      let minAtomic: bigint;
+      try {
+        minAtomic = parseDecimalToAtomicUnits(plan.tempo_amount, plan.tempo_decimals);
+      } catch {
+        return c.json({ error: "config_error", message: "Invalid plan tempo_amount/decimals on server." }, 500);
+      }
+
+      const rpcUrl = bundle.tempo_rpc_url;
+      let chainFromRpc: bigint;
+      try {
+        chainFromRpc = await fetchChainId(rpcUrl);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return c.json({ error: "rpc_error", message: `Tempo RPC error: ${msg}` }, 502);
+      }
+
+      if (chainFromRpc !== BigInt(bundle.tempo_chain_id)) {
+        return c.json(
+          {
+            error: "rpc_chain_mismatch",
+            message: "Tempo RPC chain does not match configured tempo_chain_id.",
+          },
+          502,
+        );
+      }
+
+      let receipt: Awaited<ReturnType<typeof fetchReceipt>>;
+      try {
+        receipt = await fetchReceipt(rpcUrl, txHash);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return c.json({ error: "rpc_error", message: `Could not fetch receipt: ${msg}` }, 502);
+      }
+
+      if (!receipt) {
+        return c.json(
+          { error: "tx_not_found", message: "Transaction not found or not yet finalized. Wait for confirmation and retry." },
+          400,
+        );
+      }
+
+      if (receipt.status !== "0x1") {
+        return c.json({ error: "tx_reverted", message: "Transaction failed on-chain." }, 400);
+      }
+
+      const okPay = receiptContainsTip20Payment(
+        receipt,
+        plan.tempo_currency,
+        bundle.tempo_recipient,
+        minAtomic,
       );
+      if (!okPay) {
+        return c.json(
+          {
+            error: "payment_mismatch",
+            message:
+              "Receipt does not show a matching TIP-20 transfer to the configured recipient for this plan (check amount, token, and payee).",
+          },
+          400,
+        );
+      }
+
+      const now = new Date().toISOString();
+      const txRowId = randomUuid();
+      const credits = plan.credits;
+
+      try {
+        db.transaction(() => {
+          db.prepare(
+            `INSERT INTO credit_transactions (
+               id, api_key_id, amount, type, description, tempo_tx_hash, tempo_chain_id, plan_id, created_at
+             ) VALUES (?, ?, ?, 'purchase_tempo', ?, ?, ?, ?, ?)`,
+          ).run(
+            txRowId,
+            row.id,
+            credits,
+            `Tempo purchase plan ${plan.id}`,
+            txHash,
+            bundle.tempo_chain_id,
+            plan.id,
+            now,
+          );
+          db.prepare(
+            `UPDATE api_keys
+             SET credit_balance = credit_balance + ?,
+                 total_credits_purchased = total_credits_purchased + ?
+             WHERE id = ?`,
+          ).run(credits, credits, row.id);
+        })();
+      } catch (e) {
+        if (e instanceof Database.SqliteError && e.code === "SQLITE_CONSTRAINT_UNIQUE") {
+          return c.json(
+            { error: "duplicate_tx", message: "This transaction hash was already used for a top-up." },
+            409,
+          );
+        }
+        throw e;
+      }
+
+      const updated = db
+        .prepare(`SELECT credit_balance, total_credits_purchased FROM api_keys WHERE id = ?`)
+        .get(row.id) as { credit_balance: number; total_credits_purchased: number };
+
+      return c.json({
+        credit_balance: updated.credit_balance,
+        amount_added: credits,
+        total_credits_purchased: updated.total_credits_purchased,
+        plan_id: plan.id,
+        tempo_tx_hash: txHash,
+      });
     }
 
-    const body = await c.req.json().catch(() => null);
-    const amount = Number(body && typeof body === "object" ? (body as { amount?: unknown }).amount : NaN);
-    if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
-      return c.json({ error: "invalid_amount", message: "amount must be a positive number (max 1e6)" }, 400);
+    if (wantsDev) {
+      const amount = Number((obj as { amount: number }).amount);
+      if (amount <= 0 || amount > 1_000_000) {
+        return c.json({ error: "invalid_amount", message: "amount must be a positive number (max 1e6)" }, 400);
+      }
+
+      const now = new Date().toISOString();
+      const txId = randomUuid();
+
+      db.prepare(
+        `UPDATE api_keys
+         SET credit_balance = credit_balance + ?,
+             total_credits_purchased = total_credits_purchased + ?
+         WHERE id = ?`,
+      ).run(amount, amount, row.id);
+
+      db.prepare(
+        `INSERT INTO credit_transactions (
+           id, api_key_id, amount, type, description, tempo_tx_hash, tempo_chain_id, plan_id, created_at
+         ) VALUES (?, ?, ?, 'dev_topup', 'Dev-only top-up (requires DEV_TOPUP_SECRET on server)', NULL, NULL, NULL, ?)`,
+      ).run(txId, row.id, amount, now);
+
+      const updated = db
+        .prepare(`SELECT credit_balance FROM api_keys WHERE id = ?`)
+        .get(row.id) as { credit_balance: number };
+
+      return c.json({
+        credit_balance: updated.credit_balance,
+        amount_added: amount,
+      });
     }
 
-    const now = new Date().toISOString();
-    const txId = randomUuid();
-
-    db.prepare(
-      `UPDATE api_keys
-       SET credit_balance = credit_balance + ?,
-           total_credits_purchased = total_credits_purchased + ?
-       WHERE id = ?`,
-    ).run(amount, amount, row.id);
-
-    db.prepare(
-      `INSERT INTO credit_transactions (id, api_key_id, amount, type, description, tempo_tx_hash, created_at)
-       VALUES (?, ?, ?, 'dev_topup', 'Dev-only top-up (requires DEV_TOPUP_SECRET on server)', NULL, ?)`,
-    ).run(txId, row.id, amount, now);
-
-    const updated = db
-      .prepare(`SELECT credit_balance FROM api_keys WHERE id = ?`)
-      .get(row.id) as { credit_balance: number };
-
-    return c.json({
-      credit_balance: updated.credit_balance,
-      amount_added: amount,
-    });
+    return c.json(
+      {
+        error: "checkout_not_available",
+        message:
+          "Send { plan_id, tempo_tx_hash, tempo_chain_id } after paying on Tempo, or use dev top-up with X-BDS-Dev-Topup-Secret when configured.",
+        billing_url: config.billingTopupUrl,
+        plans_url: `${config.baseUrl}/credits/plans`,
+      },
+      501,
+    );
   });
 
   r.get("/credits/usage", (c) => {
@@ -99,7 +306,7 @@ export function createCreditsRoutes(db: SqliteDb, config: AppConfig) {
 
     const rows = db
       .prepare(
-        `SELECT id, amount, type, description, tempo_tx_hash, created_at
+        `SELECT id, amount, type, description, tempo_tx_hash, tempo_chain_id, plan_id, created_at
          FROM credit_transactions
          WHERE api_key_id = ?
          ORDER BY created_at DESC
@@ -111,6 +318,8 @@ export function createCreditsRoutes(db: SqliteDb, config: AppConfig) {
         type: string;
         description: string | null;
         tempo_tx_hash: string | null;
+        tempo_chain_id: number | null;
+        plan_id: string | null;
         created_at: string;
       }>;
 
@@ -156,10 +365,10 @@ export function createCreditsRoutes(db: SqliteDb, config: AppConfig) {
          WHERE api_key_id = ?`,
       )
       .get(row.id) as {
-      usage_events: number | null;
-      credits_used: number | null;
-      credits_added: number | null;
-    };
+        usage_events: number | null;
+        credits_used: number | null;
+        credits_added: number | null;
+      };
 
     return c.json({
       org_id: row.org_id,

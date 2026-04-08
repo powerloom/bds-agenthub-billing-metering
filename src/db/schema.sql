@@ -44,7 +44,30 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
   type TEXT NOT NULL,
   description TEXT,
   tempo_tx_hash TEXT,
+  tempo_chain_id INTEGER,
+  plan_id TEXT,
   created_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_credit_tx_api_key ON credit_transactions(api_key_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_credit_transactions_tempo_tx_hash ON credit_transactions(tempo_tx_hash);
+
+-- credit_plans: machine-readable packages (GET /credits/plans). If matching rows exist for TEMPO_CHAIN_ID, plans come from DB;
+-- otherwise the service falls back to CREDIT_PLANS_JSON / defaults. Recipient + RPC stay env-driven.
+-- Same logical `id` may exist per chain (e.g. launch_10 on 42431 vs 4217).
+CREATE TABLE IF NOT EXISTS credit_plans (
+  id TEXT NOT NULL,
+  tempo_chain_id INTEGER NOT NULL,
+  credits REAL NOT NULL,
+  tempo_amount TEXT NOT NULL,
+  tempo_currency TEXT NOT NULL,
+  tempo_decimals INTEGER NOT NULL DEFAULT 6,
+  label TEXT NOT NULL,
+  description TEXT NOT NULL,
+  offer TEXT,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (id, tempo_chain_id)
+);

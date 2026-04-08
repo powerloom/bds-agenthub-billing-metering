@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import type { SqliteDb } from "../types.js";
+import { migrateIfNeeded } from "./migrate.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -16,5 +17,6 @@ export function openDb(dbPath: string): SqliteDb {
   const schemaPath = path.join(__dirname, "schema.sql");
   const schema = fs.readFileSync(schemaPath, "utf-8");
   db.exec(schema);
+  migrateIfNeeded(db);
   return db;
 }
