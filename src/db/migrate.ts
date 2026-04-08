@@ -60,10 +60,21 @@ function ensureCreditPlansChainIndex(db: SqliteDb): void {
   );
 }
 
+function ensureApiKeysEmailIndex(db: SqliteDb): void {
+  const t = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='api_keys'`)
+    .get() as { name: string } | undefined;
+  if (!t) {
+    return;
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_api_keys_email ON api_keys(email)`);
+}
+
 /** Apply additive migrations after schema.sql (idempotent). */
 export function migrateIfNeeded(db: SqliteDb): void {
   migrateCreditPlansCompositeKey(db);
   ensureCreditPlansChainIndex(db);
+  ensureApiKeysEmailIndex(db);
   const cols = db.prepare(`PRAGMA table_info(credit_transactions)`).all() as Array<{ name: string }>;
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("tempo_chain_id")) {

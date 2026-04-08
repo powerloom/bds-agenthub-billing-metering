@@ -39,6 +39,23 @@ export function createSignupRoutes(db: SqliteDb, config: AppConfig) {
     }
 
     const emailNorm = email.trim();
+
+    const existingAccount = db
+      .prepare(
+        `SELECT 1 FROM api_keys WHERE lower(email) = lower(?) AND revoked_at IS NULL LIMIT 1`,
+      )
+      .get(emailNorm);
+    if (existingAccount !== undefined) {
+      return c.json(
+        {
+          error: "email_already_registered",
+          message:
+            "An account with this email already exists. Use your existing API key, or contact support to recover access.",
+        },
+        409,
+      );
+    }
+
     const rl = initiatePerEmail(emailNorm.toLowerCase());
     if (!rl.ok) {
       return c.json({ error: "rate_limited" }, 429, {

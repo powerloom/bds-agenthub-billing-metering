@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_session ON api_keys(session_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_email ON api_keys(email);
 
 CREATE TABLE IF NOT EXISTS credit_transactions (
   id TEXT PRIMARY KEY,
