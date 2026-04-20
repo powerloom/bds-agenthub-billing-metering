@@ -40,6 +40,13 @@ See `.env.example` for `BASE_URL`, `BILLING_TOPUP_URL`, `DEV_TOPUP_SECRET`, `INT
 
 Configure Core API with `MPP_BILLING_MODE=signup_api`, `MPP_SIGNUP_BILLING_URL`, `MPP_INTERNAL_BILLING_SECRET` (same value as signup server).
 
+## Web UI (`/metering`)
+
+Browser signup + top-up shell (Next.js static export in `web/`, built into `web/out`). Served on the **same origin** as the API.
+
+- **`npm run build`** runs **`build:web`** then compiles the server — run from repo root after `npm install` in `web/` (first time: `cd web && npm install`).
+- Local: `GET http://127.0.0.1:<PORT>/metering/` — same routes as `POST /signup/initiate`, etc., without CORS.
+
 ## HTTP routes (quick reference)
 
 - Health: `GET /health`

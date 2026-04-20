@@ -6,7 +6,8 @@
   "description": "Device-authorization signup + API keys for BDS agents (RFC 8628 style)",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && cp src/db/schema.sql dist/db/",
+    "build:web": "cd web && npm install && npm run build",
+    "build": "npm run build:web && tsc && cp src/db/schema.sql dist/db/",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "seed:plans": "tsx src/scripts/seed-credit-plans.ts"
