@@ -11,7 +11,8 @@ import { createRateLimiter } from "../lib/rate-limit.js";
 import { validateAgentName, validateEmail } from "../lib/validate.js";
 
 const initiatePerEmail = createRateLimiter(3_600_000, 5);
-const statusPerToken = createRateLimiter(5_000, 1);
+/** Web + CLI poll ~every 2s while pending; allow a small burst so we do not 429 legitimate polls. */
+const statusPerToken = createRateLimiter(5_000, 3);
 
 function nowIso(): string {
   return new Date().toISOString();

@@ -48,9 +48,14 @@ export default function Home() {
         "Session not found, or the API key was already delivered. Start signup again or use the CLI.",
       );
     }
+    if (res.status === 429) {
+      // Transient throttle — keep verify UI; next interval will retry.
+      return null;
+    }
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(j.error ?? `status ${res.status}`);
+      const code = j.error ?? `status ${res.status}`;
+      throw new Error(code === "rate_limited" ? "Too many checks. Please wait a few seconds." : code);
     }
     const data = (await res.json()) as StatusPending | StatusExpired | StatusApproved;
     if (data.status === "approved") {
