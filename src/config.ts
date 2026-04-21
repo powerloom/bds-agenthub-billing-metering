@@ -184,7 +184,8 @@ export function loadConfig(): AppConfig {
     port: Number.isFinite(port) ? port : 8787,
     baseUrl,
     sessionTtlSeconds: Math.max(60, Number(process.env.SESSION_TTL_SECONDS ?? "600")),
-    freeTierCredits: Math.max(0, Number(process.env.FREE_TIER_CREDITS ?? "10")),
+    /** Signup bonus (verify route). Override with FREE_TIER_CREDITS. */
+    freeTierCredits: Math.max(0, Number(process.env.FREE_TIER_CREDITS ?? "2")),
     turnstileSiteKey,
     turnstileSecretKey,
     skipTurnstile,

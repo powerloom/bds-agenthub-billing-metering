@@ -31,12 +31,13 @@ Environment variables are read from **`.env` in the process working directory** 
 | **`NODE_ENV=production`** and neither key set, **`SKIP_TURNSTILE` not set** | Process **exits at startup** — production must not run without Turnstile unless you explicitly set `SKIP_TURNSTILE=1`. |
 | `SKIP_TURNSTILE=1` | Captcha skipped even if keys are present (emergencies / explicit local override). |
 
-See `.env.example` for `BASE_URL`, `BILLING_TOPUP_URL`, `DEV_TOPUP_SECRET`, `INTERNAL_BILLING_SECRET`, `CREDIT_PER_*`, etc.
+See `.env.example` for `BASE_URL`, `BILLING_TOPUP_URL`, `DEV_TOPUP_SECRET`, `INTERNAL_BILLING_SECRET`, `CREDIT_PER_*`, `FREE_TIER_CREDITS`, etc.
 
 ### Billing (SQL) + BDS Core API
 
 - **Public**: `GET /credits/balance`, `GET /credits/usage`, `GET /credits/usage/summary?days=7` — same API key auth as balance.
-- **Internal** (Core API only): `POST /internal/billing/deduct` — header `X-BDS-Internal-Billing-Secret` (must match env `INTERNAL_BILLING_SECRET`), forward the client’s `Authorization: Bearer sk_live_...`, JSON body `{ "path", "method" }`. Deducts `CREDIT_PER_STREAM_SESSION` for `/mpp/stream/...`, else `CREDIT_PER_EPOCH` (default `10/7200`). Returns **402** if insufficient credits.
+- **Signup bonus:** `FREE_TIER_CREDITS` (default **2**) credits on first successful `/verify` — override in env.
+- **Internal** (Core API only): `POST /internal/billing/deduct` — header `X-BDS-Internal-Billing-Secret` (must match env `INTERNAL_BILLING_SECRET`), forward the client’s `Authorization: Bearer sk_live_...`, JSON body `{ "path", "method" }`. Deducts `CREDIT_PER_STREAM_SESSION` for `/mpp/stream/...`, else `CREDIT_PER_EPOCH` (default **`10/7200`** credits per snapshot GET — i.e. **1 credit ≈ 720** such GETs at default pricing). Returns **402** if insufficient credits.
 
 Configure Core API with `MPP_BILLING_MODE=signup_api`, `MPP_SIGNUP_BILLING_URL`, `MPP_INTERNAL_BILLING_SECRET` (same value as signup server).
 
