@@ -48,7 +48,7 @@ export default function Home() {
             Wire this form to <code className="text-zinc-300">POST /signup/initiate</code>{" "}
             and the existing credits routes on this origin. CLI users:{" "}
             <code className="text-zinc-300">bds-agent signup</code> against{" "}
-            <code className="text-zinc-300">https://bds-agent-metering.powerloom.io</code>.
+            <code className="text-zinc-300">https://bds-metering.powerloom.io</code>.
           </p>
           <form className="space-y-4 opacity-60 pointer-events-none">
             <div>

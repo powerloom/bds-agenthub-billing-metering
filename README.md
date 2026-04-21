@@ -47,6 +47,8 @@ Browser signup + top-up shell (Next.js static export in `web/`, built into `web/
 - **`npm run build`** runs **`build:web`** then compiles the server — run from repo root after `npm install` in `web/` (first time: `cd web && npm install`).
 - Local: `GET http://127.0.0.1:<PORT>/metering/` — same routes as `POST /signup/initiate`, etc., without CORS.
 
+**Production (Powerloom):** one deploy is proxied as **`https://bds-metering.powerloom.io`**. **`bds-agent signup`**, credits APIs, and device verification use the **origin** (set **`BDS_AGENT_SIGNUP_URL`** / **`--base-url`** to `https://bds-metering.powerloom.io`). The browser signup and billing shell is at **`https://bds-metering.powerloom.io/metering`**.
+
 ## HTTP routes (quick reference)
 
 - Health: `GET /health`
