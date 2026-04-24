@@ -303,7 +303,7 @@ export type AppConfig = {
   creditTopupRatePerMinute: number;
   /** Unredacted: server-side verification and `getPaymentChainById`. */
   paymentChains: PaymentChainConfig[];
-  /** Which `chain_id` is primary for `GET /credits/plans` legacy + canonical top-level fields. Defaults to `TEMPO_CHAIN_ID`. */
+  /** Which `chain_id` drives `primary_*` on `GET /credits/plans` (see `loadConfig` for precedence). */
   paymentChainsPrimaryId: number;
   termsUrl: string;
   termsVersion: string;
@@ -354,16 +354,30 @@ export function loadConfig(): AppConfig {
   const termsVersion = (process.env.TERMS_VERSION ?? DEFAULT_TERMS_VERSION).trim() || DEFAULT_TERMS_VERSION;
   const termsUrl = `${baseUrl}/agents-tos/${termsVersion}`;
 
-  const defaultChain = Math.round(envNumber("TEMPO_CHAIN_ID", DEFAULT_TEMPO_CHAIN_ID));
+  const paymentChains = parsePaymentChainsFromEnv();
   const primaryRaw = process.env.PAYMENT_CHAINS_PRIMARY_ID?.trim();
+  const tempoChainEnv = process.env.TEMPO_CHAIN_ID;
+  const hasExplicitTempoChainId = tempoChainEnv != null && String(tempoChainEnv).trim() !== "";
+  /**
+   * Default for `GET /credits/plans` top-level `primary_*` when `PAYMENT_CHAINS_PRIMARY_ID` is unset:
+   * - If `TEMPO_CHAIN_ID` is set in env → that id (back-compat single-chain / Moderato).
+   * Else if at least one payment chain is configured (file / inline / implicit single-chain) →
+   * **first chain in that list** (so commenting out all `TEMPO_*` no longer forces 42431 when
+   * your `payment-chains.json` leads with another id).
+   * Else → `42431` (built-in last resort only when the payment chain list is empty).
+   */
+  const defaultPrimaryWhenUnset = hasExplicitTempoChainId
+    ? Math.round(envNumber("TEMPO_CHAIN_ID", DEFAULT_TEMPO_CHAIN_ID))
+    : paymentChains.length > 0
+      ? paymentChains[0]!.chain_id
+      : DEFAULT_TEMPO_CHAIN_ID;
   const paymentChainsPrimaryId = primaryRaw
     ? Math.round(Number(primaryRaw))
-    : defaultChain;
+    : defaultPrimaryWhenUnset;
   if (!Number.isFinite(paymentChainsPrimaryId) || paymentChainsPrimaryId < 0) {
     throw new Error("[bds-agenthub-billing-metering] PAYMENT_CHAINS_PRIMARY_ID must be a non-negative number.");
   }
 
-  const paymentChains = parsePaymentChainsFromEnv();
   const creditPlansFallback: CreditPlansBundle = {
     ...parseCreditPlansBundleFromEnv(termsVersion),
     terms_url: termsUrl,
