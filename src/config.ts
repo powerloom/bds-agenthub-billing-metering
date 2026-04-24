@@ -24,7 +24,10 @@ export type PaymentChainConfig = {
   recipient: string;
 };
 
-/** Single credit plan (GET /credits/plans + ERC-20 top-up). DB columns match this shape (`chain_id`, `token_*`). */
+/** How on-chain payment is verified for this plan. */
+export type CreditPlanPaymentKind = "erc20" | "native_value";
+
+/** Single credit plan (GET /credits/plans + on-chain top-up). DB columns match this shape (`chain_id`, `token_*`, `payment_kind`). */
 export type CreditPlan = {
   id: string;
   credits: number;
@@ -50,6 +53,11 @@ export type CreditPlan = {
   description: string;
   offer?: string;
   active: boolean;
+  /**
+   * `erc20` = `Transfer` log to `token_contract` (default). `native_value` = chain native / CGT
+   * `value` to `recipient` (use `token_contract` = `0x0000…0000` as placeholder in DB).
+   */
+  payment_kind?: CreditPlanPaymentKind;
 };
 
 /** Resolved plans bundle returned by GET /credits/plans. */
@@ -219,6 +227,12 @@ function creditPlanFromEnvJson(x: unknown, defaultChainId: number): CreditPlan {
   }
   if (r.offer != null && String(r.offer).trim() !== "") {
     plan.offer = String(r.offer);
+  }
+  const pk = r.payment_kind;
+  if (pk === "native_value") {
+    plan.payment_kind = "native_value";
+  } else {
+    plan.payment_kind = "erc20";
   }
   return plan;
 }

@@ -9,18 +9,20 @@ import type { SqliteDb } from "../types.js";
  * RPC / treasury stay on **`PAYMENT_CHAINS_JSON(_FILE)`**; per-row `rpc_url` / `recipient` here
  * are optional overrides (usually NULL).
  *
- * **7869 (Powerloom mainnet, Arbitrum Nitro L2):** on this chain **POWER is the custom gas
- * token (CGT)**—not the same asset as the Ethereum-mainnet **ERC-20** POWER row
- * `launch_10_eth_power` below. Add a `chain_id: 7869` plan with the **CGT** contract
- * (and decimals) your verifier expects for `Transfer` logs; see
- * `daily_notes_work_plan/2026-04-24/01-agent-signup-pay-rail.md` §2.4.
+ * **7869 (Powerloom mainnet):** POWER is the **CGT**; use `payment_kind: "native_value"` and
+ * `token_contract` all-zero (placeholder). Verification uses `tx.value`, not ERC-20 logs.
+ * Treasury / RPC for 7869 come from **`PAYMENT_CHAINS_JSON(_FILE)`** (not from this row’s
+ * optional `rpc_url` / `recipient` unless you set overrides).
  */
 export type CreditPlanSeed = {
   id: string;
   credits: number;
   /** Human-readable token amount (same units as `token_decimals`). */
   token_amount: string;
-  /** ERC-20 contract address. */
+  /**
+   * For `erc20`: real ERC-20. For `native_value`: use `0x0000…0000` (placeholder; min amount is
+   * still `token_amount` + `token_decimals` vs `tx.value`).
+   */
   token_contract: string;
   token_decimals: number;
   /** EIP-155 chain id. */
@@ -33,6 +35,8 @@ export type CreditPlanSeed = {
   token_symbol: string;
   rpc_url?: string | null;
   recipient?: string | null;
+  /** Defaults to `erc20` when omitted. */
+  payment_kind?: "erc20" | "native_value";
 };
 
 export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
@@ -49,6 +53,7 @@ export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
     offer: "launch_50pct_off",
     sort_order: 0,
     token_symbol: "POWER",
+    payment_kind: "erc20",
   },
   {
     id: "launch_10_tempo_pathusd",
@@ -62,6 +67,7 @@ export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
     offer: "launch_50pct_off",
     sort_order: 1,
     token_symbol: "pathUSD",
+    payment_kind: "erc20",
   },
   {
     id: "launch_10_eth_usdc",
@@ -75,6 +81,7 @@ export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
     offer: "launch_50pct_off",
     sort_order: 2,
     token_symbol: "USDC",
+    payment_kind: "erc20",
   },
   {
     id: "launch_10_eth_usdt",
@@ -88,6 +95,7 @@ export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
     offer: "launch_50pct_off",
     sort_order: 3,
     token_symbol: "USDT",
+    payment_kind: "erc20",
   },
   {
     id: "launch_10_pol_usdc",
@@ -101,6 +109,7 @@ export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
     offer: "launch_50pct_off",
     sort_order: 4,
     token_symbol: "USDC",
+    payment_kind: "erc20",
   },
   {
     id: "launch_10_pol_usdt",
@@ -114,6 +123,7 @@ export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
     offer: "launch_50pct_off",
     sort_order: 5,
     token_symbol: "USDT",
+    payment_kind: "erc20",
   },
   {
     id: "launch_10_arb_usdc",
@@ -127,6 +137,7 @@ export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
     offer: "launch_50pct_off",
     sort_order: 6,
     token_symbol: "USDC",
+    payment_kind: "erc20",
   },
   {
     id: "launch_10_arb_usdt",
@@ -140,6 +151,7 @@ export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
     offer: "launch_50pct_off",
     sort_order: 7,
     token_symbol: "USDT",
+    payment_kind: "erc20",
   },
   {
     id: "launch_10_op_usdc",
@@ -153,6 +165,7 @@ export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
     offer: "launch_50pct_off",
     sort_order: 8,
     token_symbol: "USDC",
+    payment_kind: "erc20",
   },
   {
     id: "launch_10_op_usdt",
@@ -166,6 +179,22 @@ export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
     offer: "launch_50pct_off",
     sort_order: 9,
     token_symbol: "USDT",
+    payment_kind: "erc20",
+  },
+  {
+    id: "launch_10_pl_power_cgt",
+    credits: 10,
+    token_amount: "5",
+    token_contract: "0x0000000000000000000000000000000000000000",
+    token_decimals: 18,
+    chain_id: 7869,
+    label: "10 credits — POWER (native / CGT on Powerloom 7869)",
+    description:
+      "10 credits: send at least 5 POWER on chain 7869 as a plain value transfer to the configured recipient. Not Ethereum L1 ERC-20 POWER.",
+    offer: "launch_50pct_off",
+    sort_order: 10,
+    token_symbol: "POWER",
+    payment_kind: "native_value",
   },
 ];
 
@@ -178,12 +207,13 @@ export function seedDefaultCreditPlans(db: SqliteDb): number {
     `INSERT OR IGNORE INTO credit_plans (
        id, chain_id, credits, token_amount, token_contract, token_decimals,
        label, description, offer, active, sort_order, created_at, updated_at,
-       token_symbol, rpc_url, recipient
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
+       token_symbol, rpc_url, recipient, payment_kind
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   let inserted = 0;
   for (const p of DEFAULT_CREDIT_PLAN_SEEDS) {
+    const kind = p.payment_kind === "native_value" ? "native_value" : "erc20";
     const info = stmt.run(
       p.id,
       p.chain_id,
@@ -200,6 +230,7 @@ export function seedDefaultCreditPlans(db: SqliteDb): number {
       p.token_symbol,
       p.rpc_url ?? null,
       p.recipient ?? null,
+      kind,
     );
     inserted += Number(info.changes ?? 0);
   }

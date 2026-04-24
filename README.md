@@ -45,7 +45,25 @@ The service needs a **JSON array** of `{ "chain_id", "rpc_url", "recipient" }` f
 
 Example file: `config/payment-chains.example.json` in this repo (copy to your secrets path and set `PAYMENT_CHAINS_JSON_FILE=/path/to/payment-chains.json`).
 
-**Powerloom mainnet (EIP-155 `7869`, Arbitrum Nitro L2).** The fee token is **POWER** as the **custom gas token (CGT)** for that L2. That is **not** the same contract as the **Ethereum L1** ERC-20 POWER used in seeded plans for `chain_id` `1`—set `chain_id: 7869` with an RPC for the L2 (e.g. `https://rpc-v2.powerloom.network`) and the correct `recipient`; plan rows in SQLite must use the **7869** CGT token contract in `token_contract` when you add POWER-on-L2 pricing.
+**Powerloom mainnet (EIP-155 `7869`, Arbitrum Nitro L2).** The fee token is **POWER** as the **custom gas token (CGT)**. User payments are often a **plain native `value` send** (no ERC-20 `Transfer` logs). For those plans, set `payment_kind` to `native_value` in `credit_plans` and use `token_contract` = `0x0000000000000000000000000000000000000000` as a placeholder (amount is still `token_amount` / `token_decimals` for quotes and verification against `tx.value`). Ethereum L1 **ERC-20** POWER rows use `payment_kind` `erc20` (default).
+
+**`GET /credits/plans` bundle:** `primary_recipient` / `primary_chain_id` / `primary_rpc_url` are the **primary** payment chain (`PAYMENT_CHAINS_PRIMARY_ID`, else `TEMPO_CHAIN_ID`, often **42431** Moderato). They are defaults for older single-chain clients and for the CLI Tempo top-up path; **each row in `plans[]` is authoritative** for that plan’s chain and `payment_kind`.
+
+### How credit plans get into the DB (migrations + seed)
+
+1. **Migrations** run automatically whenever the app opens the SQLite file (`openDb` in `src/db/client.ts` — also used by `npm run seed:plans`). You do **not** run a separate migration CLI. New columns (e.g. `payment_kind`) appear after deploy/restart or after running seed once.
+2. **Default `CREDIT_PLANS_SOURCE` is `db`:** plans are read from the `credit_plans` table, not from env-only JSON.
+3. **Fill / refresh plan rows** with the seed script (same `DB_PATH` the server uses):
+   ```bash
+   cd bds-agenthub-billing-metering
+   export DB_PATH=/path/to/signup.db   # must match the running service
+   npm run seed:plans
+   ```
+   This executes `src/scripts/seed-credit-plans.ts`, which `INSERT OR IGNORE`s rows from `src/lib/seed-credit-plans.ts` (`DEFAULT_CREDIT_PLAN_SEEDS`). Existing `(id, chain_id)` pairs are left unchanged; to change amounts or `payment_kind`, update the row in SQL or adjust the seed and use a new `id`, or delete the old row and seed again.
+4. **Chain 7869 must be in payment config** (`PAYMENT_CHAINS_JSON(_FILE)`) with RPC + `recipient`, or the API will not expose or verify that chain even if a plan row exists.
+5. **Optional:** set `CREDIT_PLANS_SOURCE=env` and provide plans only via `CREDIT_PLANS_JSON` (advanced; most deployments use the DB + seed).
+
+The repo includes a **Powerloom 7869 native (CGT)** example row in `seed-credit-plans.ts` (`launch_10_pl_power_cgt`, `payment_kind: native_value`). Tune `token_amount` / `token_decimals` there, then re-run `npm run seed:plans` on a fresh row or after deleting the old PK row.
 
 ### Billing (SQL) + BDS Core API
 

@@ -1,4 +1,4 @@
-import type { AppConfig, CreditPlan, CreditPlansBundle } from "../config.js";
+import type { AppConfig, CreditPlan, CreditPlanPaymentKind, CreditPlansBundle } from "../config.js";
 import { getPrimaryPaymentChain } from "../config.js";
 import { redactRpcUrlForClient } from "./rpc-redact.js";
 import type { SqliteDb } from "../types.js";
@@ -17,6 +17,7 @@ type CreditPlanRow = {
   token_symbol: string | null;
   rpc_url: string | null;
   recipient: string | null;
+  payment_kind: string | null;
 };
 
 function toPublicChains(config: AppConfig): CreditPlansBundle["chains"] {
@@ -75,7 +76,7 @@ export function resolveCreditPlansBundle(db: SqliteDb, config: AppConfig): Credi
   const rows = db
     .prepare(
       `SELECT id, chain_id, credits, token_amount, token_contract, token_decimals, label, description, offer, active,
-              token_symbol, rpc_url, recipient
+              token_symbol, rpc_url, recipient, payment_kind
        FROM credit_plans
        WHERE active = 1 AND chain_id IN (${placeholders})
        ORDER BY sort_order ASC, id ASC`,
@@ -87,6 +88,7 @@ export function resolveCreditPlansBundle(db: SqliteDb, config: AppConfig): Credi
   }
 
   const plans: CreditPlan[] = rows.map((r) => {
+    const pk: CreditPlanPaymentKind = r.payment_kind === "native_value" ? "native_value" : "erc20";
     const p: CreditPlan = {
       id: r.id,
       credits: r.credits,
@@ -98,6 +100,7 @@ export function resolveCreditPlansBundle(db: SqliteDb, config: AppConfig): Credi
       description: r.description,
       offer: r.offer ?? undefined,
       active: r.active === 1,
+      payment_kind: pk,
     };
     if (r.token_symbol) p.token_symbol = r.token_symbol;
     if (r.rpc_url) p.rpc_url = r.rpc_url;

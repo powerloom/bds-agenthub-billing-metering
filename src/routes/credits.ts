@@ -7,7 +7,7 @@ import { extractApiKey, lookupApiKey } from "../lib/auth.js";
 import { randomUuid } from "../lib/crypto.js";
 import { parseDecimalToAtomicUnits } from "../lib/parse-units.js";
 import { createRateLimiter } from "../lib/rate-limit.js";
-import { verifyErc20Payment } from "../lib/payment-verify.js";
+import { verifyErc20Payment, verifyNativeValuePayment } from "../lib/payment-verify.js";
 import type { SqliteDb } from "../types.js";
 
 const HEX64 = /^0x[a-fA-F0-9]{64}$/;
@@ -151,14 +151,17 @@ export function createCreditsRoutes(db: SqliteDb, config: AppConfig) {
         return c.json({ error: "config_error", message: "Invalid plan token_amount/token_decimals on server." }, 500);
       }
 
-      const verified = await verifyErc20Payment(
-        rpcUrl,
-        txHash,
-        plan.chain_id,
-        plan.token_contract,
-        topupRecipient,
-        minAtomic,
-      );
+      const useNative = plan.payment_kind === "native_value";
+      const verified = useNative
+        ? await verifyNativeValuePayment(rpcUrl, txHash, plan.chain_id, topupRecipient, minAtomic)
+        : await verifyErc20Payment(
+            rpcUrl,
+            txHash,
+            plan.chain_id,
+            plan.token_contract,
+            topupRecipient,
+            minAtomic,
+          );
       if (!verified.ok) {
         return c.json({ error: verified.error, message: verified.message }, verified.http as 400 | 502);
       }

@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS credit_plans (
   token_symbol TEXT,
   rpc_url TEXT,
   recipient TEXT,
+  payment_kind TEXT NOT NULL DEFAULT 'erc20' CHECK (payment_kind IN ('erc20', 'native_value')),
   PRIMARY KEY (id, chain_id)
 );
 
@@ -98,6 +99,7 @@ CREATE TABLE IF NOT EXISTS signup_payment_quotes (
   consumed_at TEXT,
   api_key_id TEXT,
   claim_tx_hash TEXT,
+  payment_kind TEXT NOT NULL DEFAULT 'erc20' CHECK (payment_kind IN ('erc20', 'native_value')),
   FOREIGN KEY (api_key_id) REFERENCES api_keys(id)
 );
 

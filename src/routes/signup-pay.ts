@@ -6,7 +6,7 @@ import { resolveCreditPlansBundle } from "../lib/credit-plans-resolve.js";
 import { randomApiKey, randomOrgId, randomUuid, randomSignupNonce, sha256Hex } from "../lib/crypto.js";
 import { PAY_RAIL_PLACEHOLDER_SESSION_ID } from "../lib/pay-rail.js";
 import { parseDecimalToAtomicUnits } from "../lib/parse-units.js";
-import { verifyErc20Payment } from "../lib/payment-verify.js";
+import { verifyErc20Payment, verifyNativeValuePayment } from "../lib/payment-verify.js";
 import { createRateLimiter } from "../lib/rate-limit.js";
 import { redactRpcUrlForClient } from "../lib/rpc-redact.js";
 import { validateAgentName, validateEmail } from "../lib/validate.js";
@@ -74,6 +74,7 @@ type QuoteRow = {
   consumed_at: string | null;
   agent_name: string;
   email: string | null;
+  payment_kind: string | null;
 };
 
 function quoteToJson(
@@ -83,6 +84,7 @@ function quoteToJson(
   plan: CreditPlan,
   rpcForHint: string,
 ): Record<string, unknown> {
+  const native = plan.payment_kind === "native_value";
   return {
     signup_nonce: rawNonce,
     recipient: row.recipient,
@@ -92,11 +94,14 @@ function quoteToJson(
     amount_atomic: row.amount_atomic,
     amount_human: plan.token_amount,
     chain_id: row.chain_id,
+    payment_kind: native ? "native_value" : "erc20",
     rpc_hint: redactRpcUrlForClient(rpcForHint),
     expires_at: row.expires_at,
     terms_url: config.termsUrl,
     terms_version: row.terms_version,
-    notice: `Sending the specified ERC-20 Transfer to \`recipient\` within the expiry window, from \`payer_address\`, constitutes acceptance of terms ${row.terms_version}.`,
+    notice: native
+      ? `Send at least the quoted **native** amount to \`recipient\` (chain gas token) within the expiry window, from \`payer_address\`, constitutes acceptance of terms ${row.terms_version}.`
+      : `Sending the specified ERC-20 Transfer to \`recipient\` within the expiry window, from \`payer_address\`, constitutes acceptance of terms ${row.terms_version}.`,
   };
 }
 
@@ -251,12 +256,13 @@ export function createSignupPayRoutes(db: SqliteDb, config: AppConfig) {
     const termsV = config.termsVersion;
 
     try {
+      const pKind = plan.payment_kind === "native_value" ? "native_value" : "erc20";
       db.prepare(
         `INSERT INTO signup_payment_quotes (
            id, signup_nonce_hash, signup_nonce_raw, agent_name, email, plan_id, chain_id,
            token_contract, token_symbol, token_decimals, amount_atomic, payer_address, recipient,
-           terms_version, created_at, expires_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           terms_version, created_at, expires_at, payment_kind
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id,
         nonceHash,
@@ -274,6 +280,7 @@ export function createSignupPayRoutes(db: SqliteDb, config: AppConfig) {
         termsV,
         createdAt,
         expiresAt,
+        pKind,
       );
     } catch (e) {
       if (e instanceof Database.SqliteError && e.code === "SQLITE_CONSTRAINT_UNIQUE") {
@@ -362,15 +369,20 @@ export function createSignupPayRoutes(db: SqliteDb, config: AppConfig) {
       return c.json({ error: "config_error", message: "Invalid amount_atomic on quote." }, 500);
     }
 
-    const verified = await verifyErc20Payment(
-      rpcUrl,
-      txHash,
-      plan.chain_id,
-      plan.token_contract,
-      recipient,
-      minAtomic,
-      { expectedPayer: row.payer_address },
-    );
+    const useNative = plan.payment_kind === "native_value" || row.payment_kind === "native_value";
+    const verified = useNative
+      ? await verifyNativeValuePayment(rpcUrl, txHash, plan.chain_id, recipient, minAtomic, {
+          expectedPayer: row.payer_address,
+        })
+      : await verifyErc20Payment(
+          rpcUrl,
+          txHash,
+          plan.chain_id,
+          plan.token_contract,
+          recipient,
+          minAtomic,
+          { expectedPayer: row.payer_address },
+        );
     if (!verified.ok) {
       return c.json({ error: verified.error, message: verified.message }, verified.http as 400 | 502);
     }

@@ -106,7 +106,7 @@ export async function fetchChainId(rpcUrl: string): Promise<bigint> {
   return BigInt(hex);
 }
 
-type TxObject = { from?: string };
+type TxObject = { from?: string; to?: string | null; value?: string };
 
 /** Returns lowercase `0x` address of transaction sender, or null if not found. */
 export async function fetchTransactionFrom(rpcUrl: string, txHash: string): Promise<string | null> {
@@ -116,4 +116,31 @@ export async function fetchTransactionFrom(rpcUrl: string, txHash: string): Prom
     return null;
   }
   return from.toLowerCase();
+}
+
+/**
+ * Fetches `eth_getTransactionByHash` fields needed for native / CGT value verification
+ * (simple `to` + `value` send; no calldata; no ERC-20 `Transfer` logs).
+ */
+export async function fetchTransactionNativeFields(
+  rpcUrl: string,
+  txHash: string,
+): Promise<{ from: string; to: string; value: bigint } | null> {
+  const result = await jsonRpc<TxObject | null>(rpcUrl, "eth_getTransactionByHash", [txHash]);
+  if (!result || typeof result.from !== "string") {
+    return null;
+  }
+  const toRaw = result.to;
+  if (toRaw == null || typeof toRaw !== "string" || toRaw === "0x") {
+    return null;
+  }
+  const v = result.value;
+  if (v == null || typeof v !== "string" || !v.startsWith("0x")) {
+    return null;
+  }
+  return {
+    from: result.from.toLowerCase(),
+    to: toRaw.toLowerCase(),
+    value: BigInt(v),
+  };
 }

@@ -159,6 +159,31 @@ function ensureCreditPlansOptionalMetaColumns(db: SqliteDb): void {
   if (!names.has("recipient")) {
     db.exec(`ALTER TABLE credit_plans ADD COLUMN recipient TEXT`);
   }
+  if (!names.has("payment_kind")) {
+    db.exec(
+      `ALTER TABLE credit_plans ADD COLUMN payment_kind TEXT NOT NULL DEFAULT 'erc20' CHECK (payment_kind IN ('erc20', 'native_value'))`,
+    );
+  }
+}
+
+function quotesColumnSet(db: SqliteDb): Set<string> {
+  if (!tableExists(db, "signup_payment_quotes")) {
+    return new Set();
+  }
+  const cols = db.prepare(`PRAGMA table_info(signup_payment_quotes)`).all() as Array<{ name: string }>;
+  return new Set(cols.map((c) => c.name));
+}
+
+function ensureSignupQuotesPaymentKind(db: SqliteDb): void {
+  if (!tableExists(db, "signup_payment_quotes")) {
+    return;
+  }
+  const names = quotesColumnSet(db);
+  if (!names.has("payment_kind")) {
+    db.exec(
+      `ALTER TABLE signup_payment_quotes ADD COLUMN payment_kind TEXT NOT NULL DEFAULT 'erc20' CHECK (payment_kind IN ('erc20', 'native_value'))`,
+    );
+  }
 }
 
 function ensurePayRailPlaceholderSession(db: SqliteDb): void {
@@ -225,6 +250,7 @@ function ensureSignupPaymentQuotesTable(db: SqliteDb): void {
       consumed_at TEXT,
       api_key_id TEXT,
       claim_tx_hash TEXT,
+      payment_kind TEXT NOT NULL DEFAULT 'erc20' CHECK (payment_kind IN ('erc20', 'native_value')),
       FOREIGN KEY (api_key_id) REFERENCES api_keys(id)
     );
   `);
@@ -244,6 +270,7 @@ export function migrateIfNeeded(db: SqliteDb): void {
   ensurePayRailPlaceholderSession(db);
   ensureApiKeysPayerAddress(db);
   ensureSignupPaymentQuotesTable(db);
+  ensureSignupQuotesPaymentKind(db);
 
   const tcols = transColumnSet(db);
   if (tableExists(db, "credit_transactions")) {
