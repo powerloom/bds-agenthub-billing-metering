@@ -59,9 +59,13 @@ Example file: `config/payment-chains.example.json` in this repo (copy to your se
    export DB_PATH=/path/to/signup.db   # must match the running service
    npm run seed:plans
    ```
-   This executes `src/scripts/seed-credit-plans.ts`, which `INSERT OR IGNORE`s rows from `src/lib/seed-credit-plans.ts` (`DEFAULT_CREDIT_PLAN_SEEDS`). Existing `(id, chain_id)` pairs are left unchanged; to change amounts or `payment_kind`, update the row in SQL or adjust the seed and use a new `id`, or delete the old row and seed again.
-4. **Chain 7869 must be in payment config** (`PAYMENT_CHAINS_JSON(_FILE)`) with RPC + `recipient`, or the API will not expose or verify that chain even if a plan row exists.
-5. **Optional:** set `CREDIT_PLANS_SOURCE=env` and provide plans only via `CREDIT_PLANS_JSON` (advanced; most deployments use the DB + seed).
+   This executes `src/scripts/seed-credit-plans.ts`, which `INSERT OR IGNORE`s rows from `src/lib/seed-credit-plans.ts` (`DEFAULT_CREDIT_PLAN_SEEDS`). Existing `(id, chain_id)` pairs are left unchanged; to change amounts or `payment_kind`, use the **admin CLI** (same `DB_PATH` as the server) or delete the old row and seed again.
+4. **Edit plans and per-key rate limits (CLI):** `export DB_PATH=…` and run `npm run admin -- help`. Examples:
+   - `npm run admin -- plan list` / `plan get <id> <chain_id>` / `plan set-active <id> <chain_id> 0|1` / `plan delete <id> <chain_id>`
+   - `npm run admin -- plan upsert ./row.json` (or `… upsert -` with JSON on stdin) — same fields as a `credit_plans` row: `id`, `chain_id`, `credits`, `token_amount`, `token_contract`, `token_decimals`, `label`, `description`, `sort_order`, `token_symbol`, optional `offer`, `active`, `rpc_url`, `recipient`, `payment_kind` (`erc20` | `native_value`).
+   - `npm run admin -- key list` — `npm run admin -- key rlimits <api_key_id> <rpm> <rpd>` for advertised rate limits on `GET /credits/balance`.
+5. **Chain 7869 must be in payment config** (`PAYMENT_CHAINS_JSON(_FILE)`) with RPC + `recipient`, or the API will not expose or verify that chain even if a plan row exists.
+6. **Optional:** set `CREDIT_PLANS_SOURCE=env` and provide plans only via `CREDIT_PLANS_JSON` (advanced; most deployments use the DB + seed).
 
 The repo includes a **Powerloom 7869 native (CGT)** example row in `seed-credit-plans.ts` (`launch_10_pl_power_cgt`, `payment_kind: native_value`). Tune `token_amount` / `token_decimals` there, then re-run `npm run seed:plans` on a fresh row or after deleting the old PK row.
 
