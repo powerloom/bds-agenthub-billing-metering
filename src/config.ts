@@ -36,7 +36,11 @@ export type CreditPlan = {
   token_decimals: number;
   /** EIP-155 chain id for this row. */
   chain_id: number;
-  /** Display / agent UX (e.g. USDC, pathUSD, POWER). */
+  /**
+   * Display / agent UX (e.g. USDC, pathUSD, POWER). Same `token_symbol` can name different
+   * assets: e.g. POWER on Ethereum L1 is an ERC-20; on `7869` (Powerloom Nitro) POWER is
+   * the chain CGT (custom gas token), so `token_contract` / decimals differ by `chain_id`.
+   */
   token_symbol?: string;
   /** Optional per-row override; otherwise `chains[].rpc_url` for this `chain_id` applies. */
   rpc_url?: string;

@@ -9,8 +9,11 @@ import type { SqliteDb } from "../types.js";
  * RPC / treasury stay on **`PAYMENT_CHAINS_JSON(_FILE)`**; per-row `rpc_url` / `recipient` here
  * are optional overrides (usually NULL).
  *
- * **7869 (POWER on Powerloom mainnet):** not seeded — set address when final (see
- * `daily_notes_work_plan/2026-04-24/01-agent-signup-pay-rail.md` §2.4).
+ * **7869 (Powerloom mainnet, Arbitrum Nitro L2):** on this chain **POWER is the custom gas
+ * token (CGT)**—not the same asset as the Ethereum-mainnet **ERC-20** POWER row
+ * `launch_10_eth_power` below. Add a `chain_id: 7869` plan with the **CGT** contract
+ * (and decimals) your verifier expects for `Transfer` logs; see
+ * `daily_notes_work_plan/2026-04-24/01-agent-signup-pay-rail.md` §2.4.
  */
 export type CreditPlanSeed = {
   id: string;
@@ -40,7 +43,7 @@ export const DEFAULT_CREDIT_PLAN_SEEDS: CreditPlanSeed[] = [
     token_contract: "0x429f0d8233e517f9acf6f0c8293bf35804063a83",
     token_decimals: 18,
     chain_id: 1,
-    label: "10 credits — 1 full day (7200 epochs) — POWER (ETH mainnet)",
+    label: "10 credits — 1 full day (7200 epochs) — POWER ERC-20 (Ethereum L1)",
     description:
       "Each credit = 720 epochs. allTrades, per-block aggregated snapshot.",
     offer: "launch_50pct_off",

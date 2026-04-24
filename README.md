@@ -45,6 +45,8 @@ The service needs a **JSON array** of `{ "chain_id", "rpc_url", "recipient" }` f
 
 Example file: `config/payment-chains.example.json` in this repo (copy to your secrets path and set `PAYMENT_CHAINS_JSON_FILE=/path/to/payment-chains.json`).
 
+**Powerloom mainnet (EIP-155 `7869`, Arbitrum Nitro L2).** The fee token is **POWER** as the **custom gas token (CGT)** for that L2. That is **not** the same contract as the **Ethereum L1** ERC-20 POWER used in seeded plans for `chain_id` `1`—set `chain_id: 7869` with an RPC for the L2 (e.g. `https://rpc-v2.powerloom.network`) and the correct `recipient`; plan rows in SQLite must use the **7869** CGT token contract in `token_contract` when you add POWER-on-L2 pricing.
+
 ### Billing (SQL) + BDS Core API
 
 - **Public**: `GET /credits/balance`, `GET /credits/usage`, `GET /credits/usage/summary?days=7` — same API key auth as balance.
