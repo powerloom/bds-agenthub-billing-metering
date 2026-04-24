@@ -72,7 +72,6 @@ export type CreditPlansBundle = {
 
 const DEFAULT_TEMPO_CHAIN_ID = 42431;
 const DEFAULT_TEMPO_RPC = "https://rpc.moderato.tempo.xyz";
-const PATH_USD_MODERATO = "0x20c0000000000000000000000000000000000000";
 const DEFAULT_TERMS_VERSION = "v1";
 
 /**
@@ -174,22 +173,7 @@ function defaultPlansBundle(
   termsVersion: string,
 ): CreditPlansBundle {
   return {
-    plans: [
-      {
-        id: "launch_10",
-        credits: 10,
-        token_amount: "0.05",
-        token_contract: PATH_USD_MODERATO,
-        token_decimals: 6,
-        chain_id: chainId,
-        token_symbol: "pathUSD",
-        label: "10 credits — 1 full day (7200 epochs)",
-        description:
-          "Each credit = 720 epochs. allTrades, per-block aggregated snapshot. Ethereum mainnet ~12s block time.",
-        offer: "launch_50pct_off",
-        active: true,
-      },
-    ],
+    plans: [],
     chains: [],
     terms_url: "",
     terms_version: termsVersion,
