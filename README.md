@@ -60,10 +60,11 @@ Example file: `config/payment-chains.example.json` in this repo (copy to your se
    npm run seed:plans
    ```
    This executes `src/scripts/seed-credit-plans.ts`, which `INSERT OR IGNORE`s rows from `src/lib/seed-credit-plans.ts` (`DEFAULT_CREDIT_PLAN_SEEDS`). Existing `(id, chain_id)` pairs are left unchanged; to change amounts or `payment_kind`, use the **admin CLI** (same `DB_PATH` as the server) or delete the old row and seed again.
-4. **Edit plans and per-key rate limits (CLI):** `export DB_PATH=…` and run `npm run admin -- help`. Examples:
-   - `npm run admin -- plan list` / `plan get <id> <chain_id>` / `plan set-active <id> <chain_id> 0|1` / `plan delete <id> <chain_id>`
-   - `npm run admin -- plan upsert ./row.json` (or `… upsert -` with JSON on stdin) — same fields as a `credit_plans` row: `id`, `chain_id`, `credits`, `token_amount`, `token_contract`, `token_decimals`, `label`, `description`, `sort_order`, `token_symbol`, optional `offer`, `active`, `rpc_url`, `recipient`, `payment_kind` (`erc20` | `native_value`).
-   - `npm run admin -- key list` — `npm run admin -- key rlimits <api_key_id> <rpm> <rpd>` for advertised rate limits on `GET /credits/balance`.
+4. **Edit plans and per-key rate limits (CLI):** `export DB_PATH=…` then `npm run admin` (no args) for an **interactive menu**, or `npm run admin -- plan wizard` for a **guided** add/edit of one `credit_plans` row (no hand-written JSON). `npm run admin -- help` lists non-interactive commands for scripts. Examples:
+   - **Interactive:** `npm run admin` / `… menu` / `… plan wizard` / `… key rlimits` (with no id — prompts for UUID, rpm, rpd)
+   - **Non-interactive:** `… plan list` / `plan get` / `plan set-active` / `plan delete` / `key list` / `key rlimits <id> <rpm> <rpd>`
+   - **JSON upsert (advanced):** `… plan upsert ./row.json` (or `… upsert -` for stdin) — same fields as a `credit_plans` row: `id`, `chain_id`, `credits`, `token_amount`, `token_contract`, `token_decimals`, `label`, `description`, `sort_order`, `token_symbol`, optional `offer`, `active`, `rpc_url`, `recipient`, `payment_kind` (`erc20` | `native_value`).
+   - Advertised rate limits (returned on `GET /credits/balance`) live on `api_keys.rate_limit_rpm` / `rate_limit_rpd`.
 5. **Chain 7869 must be in payment config** (`PAYMENT_CHAINS_JSON(_FILE)`) with RPC + `recipient`, or the API will not expose or verify that chain even if a plan row exists.
 6. **Optional:** set `CREDIT_PLANS_SOURCE=env` and provide plans only via `CREDIT_PLANS_JSON` (advanced; most deployments use the DB + seed).
 
