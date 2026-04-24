@@ -105,3 +105,15 @@ export async function fetchChainId(rpcUrl: string): Promise<bigint> {
   const hex = await jsonRpc<string>(rpcUrl, "eth_chainId", []);
   return BigInt(hex);
 }
+
+type TxObject = { from?: string };
+
+/** Returns lowercase `0x` address of transaction sender, or null if not found. */
+export async function fetchTransactionFrom(rpcUrl: string, txHash: string): Promise<string | null> {
+  const result = await jsonRpc<TxObject | null>(rpcUrl, "eth_getTransactionByHash", [txHash]);
+  const from = result?.from;
+  if (!from || typeof from !== "string") {
+    return null;
+  }
+  return from.toLowerCase();
+}

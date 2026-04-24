@@ -9,3 +9,4 @@ data/*.db-shm
 data/*.db-journal
 .env
 .DS_Store
+config/payment-chains.json

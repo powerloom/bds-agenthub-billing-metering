@@ -32,11 +32,13 @@ CREATE TABLE IF NOT EXISTS api_keys (
   rate_limit_rpm INTEGER NOT NULL DEFAULT 60,
   rate_limit_rpd INTEGER NOT NULL DEFAULT 1000,
   created_at TEXT NOT NULL,
-  revoked_at TEXT
+  revoked_at TEXT,
+  payer_address TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_session ON api_keys(session_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_email ON api_keys(email);
+CREATE INDEX IF NOT EXISTS idx_api_keys_payer ON api_keys(payer_address) WHERE payer_address IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS credit_transactions (
   id TEXT PRIMARY KEY,
@@ -44,25 +46,23 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
   amount REAL NOT NULL,
   type TEXT NOT NULL,
   description TEXT,
-  tempo_tx_hash TEXT,
-  tempo_chain_id INTEGER,
+  tx_hash TEXT,
+  chain_id INTEGER,
   plan_id TEXT,
   created_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_credit_tx_api_key ON credit_transactions(api_key_id);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_credit_transactions_tempo_tx_hash ON credit_transactions(tempo_tx_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_credit_transactions_tx_hash ON credit_transactions(tx_hash);
 
--- credit_plans: machine-readable packages (GET /credits/plans). If matching rows exist for TEMPO_CHAIN_ID, plans come from DB;
--- otherwise the service falls back to CREDIT_PLANS_JSON / defaults. Recipient + RPC stay env-driven.
--- Same logical `id` may exist per chain (e.g. launch_10 on 42431 vs 4217).
+-- credit_plans: GET /credits/plans; same logical `id` may exist per chain.
 CREATE TABLE IF NOT EXISTS credit_plans (
   id TEXT NOT NULL,
-  tempo_chain_id INTEGER NOT NULL,
+  chain_id INTEGER NOT NULL,
   credits REAL NOT NULL,
-  tempo_amount TEXT NOT NULL,
-  tempo_currency TEXT NOT NULL,
-  tempo_decimals INTEGER NOT NULL DEFAULT 6,
+  token_amount TEXT NOT NULL,
+  token_contract TEXT NOT NULL,
+  token_decimals INTEGER NOT NULL DEFAULT 6,
   label TEXT NOT NULL,
   description TEXT NOT NULL,
   offer TEXT,
@@ -70,5 +70,36 @@ CREATE TABLE IF NOT EXISTS credit_plans (
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  PRIMARY KEY (id, tempo_chain_id)
+  token_symbol TEXT,
+  rpc_url TEXT,
+  recipient TEXT,
+  PRIMARY KEY (id, chain_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_credit_plans_chain_active_sort ON credit_plans(chain_id, active, sort_order);
+
+CREATE TABLE IF NOT EXISTS signup_payment_quotes (
+  id TEXT PRIMARY KEY,
+  signup_nonce_hash TEXT UNIQUE NOT NULL,
+  signup_nonce_raw TEXT,
+  agent_name TEXT NOT NULL,
+  email TEXT,
+  plan_id TEXT NOT NULL,
+  chain_id INTEGER NOT NULL,
+  token_contract TEXT NOT NULL,
+  token_symbol TEXT NOT NULL,
+  token_decimals INTEGER NOT NULL,
+  amount_atomic TEXT NOT NULL,
+  payer_address TEXT NOT NULL,
+  recipient TEXT NOT NULL,
+  terms_version TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  api_key_id TEXT,
+  claim_tx_hash TEXT,
+  FOREIGN KEY (api_key_id) REFERENCES api_keys(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_quotes_pending_per_payer
+  ON signup_payment_quotes(payer_address, plan_id, chain_id, consumed_at);

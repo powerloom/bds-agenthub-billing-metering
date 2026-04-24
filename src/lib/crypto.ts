@@ -11,6 +11,11 @@ export function randomSessionToken(): string {
   return randomBytes(32).toString("hex");
 }
 
+/** Opaque pay-signup quote nonce; returned once to the client. */
+export function randomSignupNonce(): string {
+  return `sqn_${randomBytes(16).toString("hex")}`;
+}
+
 function randomFromCharset(length: number): string {
   let s = "";
   for (let i = 0; i < length; i++) {

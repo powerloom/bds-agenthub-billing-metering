@@ -174,7 +174,7 @@ export function createVerifyRoutes(db: SqliteDb, config: AppConfig) {
     const txId = randomUuid();
     db.prepare(
       `INSERT INTO credit_transactions (
-         id, api_key_id, amount, type, description, tempo_tx_hash, tempo_chain_id, plan_id, created_at
+         id, api_key_id, amount, type, description, tx_hash, chain_id, plan_id, created_at
        ) VALUES (?, ?, ?, 'signup_bonus', 'Free tier credits on signup', NULL, NULL, NULL, ?)`,
     ).run(txId, keyId, credits, now);
 

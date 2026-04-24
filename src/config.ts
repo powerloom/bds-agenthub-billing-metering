@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 function envNumber(name: string, defaultVal: number): number {
   const v = process.env[name];
   if (v === undefined || v === "") {
@@ -7,31 +10,55 @@ function envNumber(name: string, defaultVal: number): number {
   return Number.isFinite(n) ? n : defaultVal;
 }
 
-/** Single credit plan (GET /credits/plans + Tempo top-up verification). */
+/** Per-chain RPC + treasury; `rpc_url` in API responses is redacted when keys are in the path. */
+export type PlanChainMeta = {
+  chain_id: number;
+  rpc_url: string;
+  recipient: string;
+};
+
+export type PaymentChainConfig = {
+  chain_id: number;
+  /** Full URL including API key when applicable (server-only; not exposed in redacted form). */
+  rpc_url: string;
+  recipient: string;
+};
+
+/** Single credit plan (GET /credits/plans + ERC-20 top-up). DB columns match this shape (`chain_id`, `token_*`). */
 export type CreditPlan = {
   id: string;
   credits: number;
-  tempo_amount: string;
-  tempo_currency: string;
-  /** TIP-20 / pathUSD-style decimals (default 6 on Tempo testnets). */
-  tempo_decimals: number;
-  /**
-   * EVM chain id for this plan (e.g. 42431 Tempo Moderato, 4217 Tempo mainnet, 42161 Arbitrum One).
-   * Must match deployment `TEMPO_CHAIN_ID` for the plan to be offered. Do not infer “mainnet” vs “testnet” from a single id — use chain registries (EIP-155) per ecosystem.
-   */
-  tempo_chain_id: number;
+  /** Human-readable token amount for this plan (same units as `token_decimals`). */
+  token_amount: string;
+  /** ERC-20 contract address (checksummed or lower). */
+  token_contract: string;
+  /** Token decimals (6 for USDC, 18 for many assets, etc.). */
+  token_decimals: number;
+  /** EIP-155 chain id for this row. */
+  chain_id: number;
+  /** Display / agent UX (e.g. USDC, pathUSD, POWER). */
+  token_symbol?: string;
+  /** Optional per-row override; otherwise `chains[].rpc_url` for this `chain_id` applies. */
+  rpc_url?: string;
+  /** Optional per-row override; otherwise `chains[].recipient` for this `chain_id` applies. */
+  recipient?: string;
   label: string;
   description: string;
   offer?: string;
   active: boolean;
 };
 
-/** Full JSON returned by GET /credits/plans. */
+/** Resolved plans bundle returned by GET /credits/plans. */
 export type CreditPlansBundle = {
   plans: CreditPlan[];
-  tempo_recipient: string;
-  tempo_chain_id: number;
-  tempo_rpc_url: string;
+  /** All chains this deployment can verify `POST /credits/topup` on. */
+  chains: PlanChainMeta[];
+  terms_url: string;
+  terms_version: string;
+  /** Default / primary chain for older clients (`PAYMENT_CHAINS_PRIMARY_ID`, else `TEMPO_CHAIN_ID`). */
+  primary_recipient: string;
+  primary_chain_id: number;
+  primary_rpc_url: string;
   epoch_unit: {
     credits_per_epoch: number;
     epochs_per_credit: number;
@@ -42,17 +69,116 @@ export type CreditPlansBundle = {
 const DEFAULT_TEMPO_CHAIN_ID = 42431;
 const DEFAULT_TEMPO_RPC = "https://rpc.moderato.tempo.xyz";
 const PATH_USD_MODERATO = "0x20c0000000000000000000000000000000000000";
+const DEFAULT_TERMS_VERSION = "v1";
 
-function defaultPlansBundle(tempoRecipient: string, chainId: number, rpcUrl: string): CreditPlansBundle {
+/**
+ * Per-chain payment config:
+ * - If **`PAYMENT_CHAINS_JSON_FILE`** is set: read that path (UTF-8 JSON array). Relative paths are relative to `process.cwd()`.
+ * - Else if **`PAYMENT_CHAINS_JSON`** is set: use its string value (inline JSON, e.g. in `.env` or process env).
+ * - Else: single entry from `TEMPO_*` + `MPP_TEMPO_RECIPIENT`.
+ */
+function loadPaymentChainsJsonRawForParse():
+  | { raw: string; configLabel: string }
+  | undefined {
+  const filePath = process.env.PAYMENT_CHAINS_JSON_FILE?.trim();
+  if (filePath) {
+    const resolved = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+    let text: string;
+    try {
+      text = fs.readFileSync(resolved, "utf-8");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(
+        `[bds-agenthub-billing-metering] PAYMENT_CHAINS_JSON_FILE: cannot read ${resolved}: ${msg}`,
+      );
+    }
+    const raw = text.trim();
+    if (!raw) {
+      throw new Error(
+        `[bds-agenthub-billing-metering] PAYMENT_CHAINS_JSON_FILE: file is empty (${resolved}).`,
+      );
+    }
+    return { raw, configLabel: "PAYMENT_CHAINS_JSON_FILE" };
+  }
+  const inline = process.env.PAYMENT_CHAINS_JSON?.trim();
+  if (inline) {
+    return { raw: inline, configLabel: "PAYMENT_CHAINS_JSON" };
+  }
+  return undefined;
+}
+
+export function parsePaymentChainsFromEnv(): PaymentChainConfig[] {
+  const loaded = loadPaymentChainsJsonRawForParse();
+  if (!loaded) {
+    const chainId = Math.round(envNumber("TEMPO_CHAIN_ID", DEFAULT_TEMPO_CHAIN_ID));
+    const rpcFromEnv = (process.env.TEMPO_RPC_URL ?? process.env.MPP_TEMPO_RPC_URL ?? "").trim();
+    const rpcUrl = rpcFromEnv || DEFAULT_TEMPO_RPC;
+    const recipient = (process.env.MPP_TEMPO_RECIPIENT ?? "").trim();
+    return [{ chain_id: chainId, rpc_url: rpcUrl, recipient }];
+  }
+  const { raw, configLabel } = loaded;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(
+      `[bds-agenthub-billing-metering] ${configLabel} must contain valid JSON (non-empty array of chain objects).`,
+    );
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error(
+      `[bds-agenthub-billing-metering] ${configLabel} must be a non-empty JSON array of chain objects.`,
+    );
+  }
+  const out: PaymentChainConfig[] = [];
+  const seen = new Set<number>();
+  for (let i = 0; i < parsed.length; i += 1) {
+    const x = parsed[i];
+    if (x === null || typeof x !== "object") {
+      throw new Error(`[bds-agenthub-billing-metering] ${configLabel} index ${i} must be an object.`);
+    }
+    const o = x as Record<string, unknown>;
+    const chainId = Math.round(Number(o.chain_id));
+    const rpcUrl = String(o.rpc_url ?? "").trim();
+    const recipient = String(o.recipient ?? "").trim();
+    if (!Number.isFinite(chainId) || chainId < 0) {
+      throw new Error(
+        `[bds-agenthub-billing-metering] ${configLabel}[${i}].chain_id must be a non-negative number.`,
+      );
+    }
+    if (!rpcUrl) {
+      throw new Error(`[bds-agenthub-billing-metering] ${configLabel}[${i}].rpc_url is required.`);
+    }
+    if (!recipient) {
+      throw new Error(`[bds-agenthub-billing-metering] ${configLabel}[${i}].recipient is required.`);
+    }
+    if (seen.has(chainId)) {
+      throw new Error(
+        `[bds-agenthub-billing-metering] ${configLabel}: duplicate chain_id ${chainId}.`,
+      );
+    }
+    seen.add(chainId);
+    out.push({ chain_id: chainId, rpc_url: rpcUrl, recipient });
+  }
+  return out;
+}
+
+function defaultPlansBundle(
+  tempoRecipient: string,
+  chainId: number,
+  rpcUrl: string,
+  termsVersion: string,
+): CreditPlansBundle {
   return {
     plans: [
       {
         id: "launch_10",
         credits: 10,
-        tempo_amount: "0.05",
-        tempo_currency: PATH_USD_MODERATO,
-        tempo_decimals: 6,
-        tempo_chain_id: chainId,
+        token_amount: "0.05",
+        token_contract: PATH_USD_MODERATO,
+        token_decimals: 6,
+        chain_id: chainId,
+        token_symbol: "pathUSD",
         label: "10 credits — 1 full day (7200 epochs)",
         description:
           "Each credit = 720 epochs. allTrades, per-block aggregated snapshot. Ethereum mainnet ~12s block time.",
@@ -60,9 +186,12 @@ function defaultPlansBundle(tempoRecipient: string, chainId: number, rpcUrl: str
         active: true,
       },
     ],
-    tempo_recipient: tempoRecipient,
-    tempo_chain_id: chainId,
-    tempo_rpc_url: rpcUrl,
+    chains: [],
+    terms_url: "",
+    terms_version: termsVersion,
+    primary_recipient: tempoRecipient,
+    primary_chain_id: chainId,
+    primary_rpc_url: rpcUrl,
     epoch_unit: {
       credits_per_epoch: 10 / 7200,
       epochs_per_credit: 720,
@@ -71,7 +200,42 @@ function defaultPlansBundle(tempoRecipient: string, chainId: number, rpcUrl: str
   };
 }
 
-function parseCreditPlansBundleFromEnv(): CreditPlansBundle {
+/** Map one plan object from `CREDIT_PLANS_JSON` (canonical keys only). */
+function creditPlanFromEnvJson(x: unknown, defaultChainId: number): CreditPlan {
+  const r = x as Record<string, unknown>;
+  const chainFrom =
+    typeof r.chain_id === "number" && Number.isFinite(r.chain_id) ? Math.round(r.chain_id) : defaultChainId;
+  const tokenAmount = typeof r.token_amount === "string" && r.token_amount !== "" ? r.token_amount : "0";
+  const tokenContract = typeof r.token_contract === "string" ? r.token_contract : "";
+  const tokenDecimals =
+    typeof r.token_decimals === "number" && Number.isFinite(r.token_decimals) ? Math.round(r.token_decimals) : 6;
+  const plan: CreditPlan = {
+    id: String(r.id ?? ""),
+    credits: Number(r.credits ?? 0),
+    token_amount: String(tokenAmount),
+    token_contract: String(tokenContract),
+    token_decimals: tokenDecimals,
+    chain_id: chainFrom,
+    label: String(r.label ?? ""),
+    description: String(r.description ?? ""),
+    active: r.active !== false,
+  };
+  if (typeof r.token_symbol === "string" && r.token_symbol.trim()) {
+    plan.token_symbol = r.token_symbol.trim();
+  }
+  if (typeof r.rpc_url === "string" && r.rpc_url.trim()) {
+    plan.rpc_url = r.rpc_url.trim();
+  }
+  if (typeof r.recipient === "string" && r.recipient.trim()) {
+    plan.recipient = r.recipient.trim();
+  }
+  if (r.offer != null && String(r.offer).trim() !== "") {
+    plan.offer = String(r.offer);
+  }
+  return plan;
+}
+
+function parseCreditPlansBundleFromEnv(termsVersion: string): CreditPlansBundle {
   const raw = process.env.CREDIT_PLANS_JSON?.trim();
   const tempoRecipient = (process.env.MPP_TEMPO_RECIPIENT ?? "").trim();
   const chainId = Math.round(envNumber("TEMPO_CHAIN_ID", DEFAULT_TEMPO_CHAIN_ID));
@@ -79,46 +243,32 @@ function parseCreditPlansBundleFromEnv(): CreditPlansBundle {
   const rpcUrl = rpcFromEnv || DEFAULT_TEMPO_RPC;
 
   if (!raw) {
-    return defaultPlansBundle(tempoRecipient, chainId, rpcUrl);
+    return defaultPlansBundle(tempoRecipient, chainId, rpcUrl, termsVersion);
   }
   try {
-    const j = JSON.parse(raw) as Partial<CreditPlansBundle> & { plans?: CreditPlan[] };
-    const base = defaultPlansBundle(tempoRecipient, chainId, rpcUrl);
-    if (typeof j.tempo_recipient === "string" && j.tempo_recipient.trim()) {
-      base.tempo_recipient = j.tempo_recipient.trim();
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    const base = defaultPlansBundle(tempoRecipient, chainId, rpcUrl, termsVersion);
+    if (typeof j.primary_recipient === "string" && j.primary_recipient.trim()) {
+      base.primary_recipient = j.primary_recipient.trim();
     }
-    if (typeof j.tempo_chain_id === "number" && Number.isFinite(j.tempo_chain_id)) {
-      base.tempo_chain_id = Math.round(j.tempo_chain_id);
+    if (typeof j.primary_chain_id === "number" && Number.isFinite(j.primary_chain_id)) {
+      base.primary_chain_id = Math.round(j.primary_chain_id);
     }
-    if (typeof j.tempo_rpc_url === "string" && j.tempo_rpc_url.trim()) {
-      base.tempo_rpc_url = j.tempo_rpc_url.trim();
+    if (typeof j.primary_rpc_url === "string" && j.primary_rpc_url.trim()) {
+      base.primary_rpc_url = j.primary_rpc_url.trim();
     }
     if (j.epoch_unit && typeof j.epoch_unit === "object") {
-      base.epoch_unit = { ...base.epoch_unit, ...j.epoch_unit };
+      base.epoch_unit = { ...base.epoch_unit, ...j.epoch_unit } as CreditPlansBundle["epoch_unit"];
     }
     if (Array.isArray(j.plans) && j.plans.length > 0) {
-      base.plans = j.plans.map((p) => {
-        const x = p as Partial<CreditPlan>;
-        const planChain =
-          typeof x.tempo_chain_id === "number" && Number.isFinite(x.tempo_chain_id)
-            ? Math.round(x.tempo_chain_id)
-            : base.tempo_chain_id;
-        return {
-          id: String(x.id ?? ""),
-          credits: Number(x.credits ?? 0),
-          tempo_amount: String(x.tempo_amount ?? "0"),
-          tempo_currency: String(x.tempo_currency ?? ""),
-          tempo_decimals: x.tempo_decimals ?? 6,
-          tempo_chain_id: planChain,
-          label: String(x.label ?? ""),
-          description: String(x.description ?? ""),
-          active: x.active !== false,
-        } as CreditPlan;
-      });
+      base.plans = j.plans.map((p) => creditPlanFromEnvJson(p, base.primary_chain_id));
     }
     return base;
-  } catch {
-    throw new Error("[bds-agenthub-billing-metering] CREDIT_PLANS_JSON must be valid JSON.");
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      throw new Error("[bds-agenthub-billing-metering] CREDIT_PLANS_JSON must be valid JSON.");
+    }
+    throw e;
   }
 }
 
@@ -147,9 +297,32 @@ export type AppConfig = {
   creditPlansFallback: CreditPlansBundle;
   /** `db` = use SQLite `credit_plans` when non-empty; `env` = always use fallback only. */
   creditPlansSource: "db" | "env";
-  /** Max Tempo top-up attempts per API key per rolling minute (spam guard). */
+  /** Max on-chain top-up attempts per API key per rolling minute (spam guard). */
   creditTopupRatePerMinute: number;
+  /** Unredacted: server-side verification and `getPaymentChainById`. */
+  paymentChains: PaymentChainConfig[];
+  /** Which `chain_id` is primary for `GET /credits/plans` legacy + canonical top-level fields. Defaults to `TEMPO_CHAIN_ID`. */
+  paymentChainsPrimaryId: number;
+  termsUrl: string;
+  termsVersion: string;
+  /** Pay-signup quote lifetime (device-auth is unchanged). */
+  signupPayQuoteTtlSec: number;
 };
+
+export function getPrimaryPaymentChain(config: AppConfig): PaymentChainConfig {
+  const p = config.paymentChains.find((c) => c.chain_id === config.paymentChainsPrimaryId);
+  if (p) {
+    return p;
+  }
+  if (config.paymentChains.length > 0) {
+    return config.paymentChains[0]!;
+  }
+  throw new Error("[bds-agenthub-billing-metering] internal: paymentChains is empty");
+}
+
+export function getPaymentChainById(config: AppConfig, chainId: number): PaymentChainConfig | undefined {
+  return config.paymentChains.find((c) => c.chain_id === chainId);
+}
 
 export function loadConfig(): AppConfig {
   const port = Number(process.env.PORT ?? "8787");
@@ -176,7 +349,24 @@ export function loadConfig(): AppConfig {
 
   const skipTurnstile = skipExplicit || !hasTurnstileKeys;
 
-  const creditPlansFallback = parseCreditPlansBundleFromEnv();
+  const termsVersion = (process.env.TERMS_VERSION ?? DEFAULT_TERMS_VERSION).trim() || DEFAULT_TERMS_VERSION;
+  const termsUrl = `${baseUrl}/agents-tos/${termsVersion}`;
+
+  const defaultChain = Math.round(envNumber("TEMPO_CHAIN_ID", DEFAULT_TEMPO_CHAIN_ID));
+  const primaryRaw = process.env.PAYMENT_CHAINS_PRIMARY_ID?.trim();
+  const paymentChainsPrimaryId = primaryRaw
+    ? Math.round(Number(primaryRaw))
+    : defaultChain;
+  if (!Number.isFinite(paymentChainsPrimaryId) || paymentChainsPrimaryId < 0) {
+    throw new Error("[bds-agenthub-billing-metering] PAYMENT_CHAINS_PRIMARY_ID must be a non-negative number.");
+  }
+
+  const paymentChains = parsePaymentChainsFromEnv();
+  const creditPlansFallback: CreditPlansBundle = {
+    ...parseCreditPlansBundleFromEnv(termsVersion),
+    terms_url: termsUrl,
+    terms_version: termsVersion,
+  };
   const cps = (process.env.CREDIT_PLANS_SOURCE ?? "db").trim().toLowerCase();
   const creditPlansSource: "db" | "env" = cps === "env" ? "env" : "db";
 
@@ -197,5 +387,10 @@ export function loadConfig(): AppConfig {
     creditPlansFallback,
     creditPlansSource,
     creditTopupRatePerMinute: Math.max(1, Math.min(120, Math.round(envNumber("CREDIT_TOPUP_RATE_PER_MINUTE", 10)))),
+    paymentChains,
+    paymentChainsPrimaryId,
+    termsUrl,
+    termsVersion,
+    signupPayQuoteTtlSec: Math.max(60, Math.round(envNumber("SIGNUP_PAY_QUOTE_TTL_SEC", 1800))),
   };
 }

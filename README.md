@@ -33,6 +33,18 @@ Environment variables are read from **`.env` in the process working directory** 
 
 See `.env.example` for `BASE_URL`, `BILLING_TOPUP_URL`, `DEV_TOPUP_SECRET`, `INTERNAL_BILLING_SECRET`, `CREDIT_PER_*`, `FREE_TIER_CREDITS`, etc.
 
+### Multi-chain payment verification (`PAYMENT_CHAINS_*`)
+
+The service needs a **JSON array** of `{ "chain_id", "rpc_url", "recipient" }` for every chain it verifies on-chain (top-up, pay-signup). You can provide it in three ways (first match wins):
+
+| Source | When to use |
+|--------|-------------|
+| **`PAYMENT_CHAINS_JSON_FILE`** | **Recommended for deploy** — path to a UTF-8 JSON file (same array shape). Relative paths are resolved from the process **working directory** (e.g. Docker `WORKDIR`). Overrides inline env below. |
+| **`PAYMENT_CHAINS_JSON`** | Inline JSON string (e.g. in `.env`; escape quotes carefully). |
+| *(neither set)* | Falls back to a **single chain** from `TEMPO_CHAIN_ID`, `TEMPO_RPC_URL` / `MPP_TEMPO_RPC_URL`, and `MPP_TEMPO_RECIPIENT`. |
+
+Example file: `config/payment-chains.example.json` in this repo (copy to your secrets path and set `PAYMENT_CHAINS_JSON_FILE=/path/to/payment-chains.json`).
+
 ### Billing (SQL) + BDS Core API
 
 - **Public**: `GET /credits/balance`, `GET /credits/usage`, `GET /credits/usage/summary?days=7` — same API key auth as balance.
