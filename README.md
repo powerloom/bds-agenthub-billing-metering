@@ -35,13 +35,15 @@ See `.env.example` for `BASE_URL`, `BILLING_TOPUP_URL`, `DEV_TOPUP_SECRET`, `INT
 
 ### Multi-chain payment verification (`PAYMENT_CHAINS_*`)
 
-The service needs a **JSON array** of `{ "chain_id", "rpc_url", "recipient" }` for every chain it verifies on-chain (top-up, pay-signup). You can provide it in three ways (first match wins):
+The service needs a **JSON array** of `{ "chain_id", "rpc_url", "recipient" }` for every chain it verifies on-chain (top-up, pay-signup). Optional per row: **`public_rpc_url`** — a client-safe JSON-RPC URL returned on **`GET /credits/plans`** and in pay-signup **`rpc_hint`**. **`rpc_url`** is server-only (may include private `/v1/…` paths) and is never sent in those public responses. If **`public_rpc_url`** is omitted, public bundle fields use an empty string for that chain (agents use docs or their own RPC).
+
+You can provide payment chains in three ways (first match wins):
 
 | Source | When to use |
 |--------|-------------|
 | **`PAYMENT_CHAINS_JSON_FILE`** | **Recommended for deploy** — path to a UTF-8 JSON file (same array shape). Relative paths are resolved from the process **working directory** (e.g. Docker `WORKDIR`). Overrides inline env below. |
 | **`PAYMENT_CHAINS_JSON`** | Inline JSON string (e.g. in `.env`; escape quotes carefully). |
-| *(neither set)* | Falls back to a **single chain** from `TEMPO_CHAIN_ID`, `TEMPO_RPC_URL` / `MPP_TEMPO_RPC_URL`, and `MPP_TEMPO_RECIPIENT`. |
+| *(neither set)* | Falls back to a **single chain** from `TEMPO_CHAIN_ID`, `TEMPO_RPC_URL` / `MPP_TEMPO_RPC_URL`, `MPP_TEMPO_RECIPIENT`, and optional `TEMPO_PUBLIC_RPC_URL` / `MPP_TEMPO_PUBLIC_RPC_URL` (public hint for that chain). |
 
 Example file: `config/payment-chains.example.json` in this repo (copy to your secrets path and set `PAYMENT_CHAINS_JSON_FILE=/path/to/payment-chains.json`).
 

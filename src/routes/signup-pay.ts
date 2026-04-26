@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { Hono } from "hono";
-import type { AppConfig, CreditPlan } from "../config.js";
+import type { AppConfig, CreditPlan, PaymentChainConfig } from "../config.js";
 import { getPaymentChainById } from "../config.js";
 import { resolveCreditPlansBundle } from "../lib/credit-plans-resolve.js";
 import { randomApiKey, randomOrgId, randomUuid, randomSignupNonce, sha256Hex } from "../lib/crypto.js";
@@ -8,7 +8,8 @@ import { PAY_RAIL_PLACEHOLDER_SESSION_ID } from "../lib/pay-rail.js";
 import { parseDecimalToAtomicUnits } from "../lib/parse-units.js";
 import { verifyErc20Payment, verifyNativeValuePayment } from "../lib/payment-verify.js";
 import { createRateLimiter } from "../lib/rate-limit.js";
-import { redactRpcUrlForClient } from "../lib/rpc-redact.js";
+import { getVerificationRpcForPlan } from "../lib/plan-verification-rpc.js";
+import { publicRpcForPaymentChain } from "../lib/public-rpc.js";
 import { validateAgentName, validateEmail } from "../lib/validate.js";
 import type { SqliteDb } from "../types.js";
 
@@ -82,9 +83,10 @@ function quoteToJson(
   row: QuoteRow,
   rawNonce: string,
   plan: CreditPlan,
-  rpcForHint: string,
+  payChain: PaymentChainConfig,
 ): Record<string, unknown> {
   const native = plan.payment_kind === "native_value";
+  const rpcHint = publicRpcForPaymentChain(payChain);
   return {
     signup_nonce: rawNonce,
     recipient: row.recipient,
@@ -95,7 +97,7 @@ function quoteToJson(
     amount_human: plan.token_amount,
     chain_id: row.chain_id,
     payment_kind: native ? "native_value" : "erc20",
-    rpc_hint: redactRpcUrlForClient(rpcForHint),
+    rpc_hint: rpcHint || null,
     expires_at: row.expires_at,
     terms_url: config.termsUrl,
     terms_version: row.terms_version,
@@ -225,8 +227,7 @@ export function createSignupPayRoutes(db: SqliteDb, config: AppConfig) {
       .get(payerNorm, planId, chainId, now) as QuoteRow | undefined;
 
     if (existing?.signup_nonce_raw) {
-      const rpcForHint = (plan.rpc_url && plan.rpc_url.trim()) || payChain.rpc_url;
-      return c.json(quoteToJson(config, existing, existing.signup_nonce_raw, plan, rpcForHint), 200);
+      return c.json(quoteToJson(config, existing, existing.signup_nonce_raw, plan, payChain), 200);
     }
 
     let minAtomic: bigint;
@@ -292,8 +293,7 @@ export function createSignupPayRoutes(db: SqliteDb, config: AppConfig) {
           )
           .get(payerNorm, planId, chainId, now) as QuoteRow | undefined;
         if (again?.signup_nonce_raw) {
-          const rpcForHint2 = (plan.rpc_url && plan.rpc_url.trim()) || payChain.rpc_url;
-          return c.json(quoteToJson(config, again, again.signup_nonce_raw, plan, rpcForHint2), 200);
+          return c.json(quoteToJson(config, again, again.signup_nonce_raw, plan, payChain), 200);
         }
       }
       throw e;
@@ -302,8 +302,7 @@ export function createSignupPayRoutes(db: SqliteDb, config: AppConfig) {
     const row = db
       .prepare(`SELECT * FROM signup_payment_quotes WHERE id = ?`)
       .get(id) as QuoteRow;
-    const rpcForHint3 = (plan.rpc_url && plan.rpc_url.trim()) || payChain.rpc_url;
-    return c.json(quoteToJson(config, row, rawNonce, plan, rpcForHint3), 201);
+    return c.json(quoteToJson(config, row, rawNonce, plan, payChain), 201);
   });
 
   r.post("/signup/pay/claim", async (c) => {
@@ -346,21 +345,21 @@ export function createSignupPayRoutes(db: SqliteDb, config: AppConfig) {
       return c.json({ error: "quote_expired", message: "This pay-signup quote has expired. Request a new quote." }, 410);
     }
 
-    const payChain = getPaymentChainById(config, row.chain_id);
-    if (!payChain) {
-      return c.json(
-        { error: "chain_not_configured", message: `Chain ${row.chain_id} is not configured on this server.` },
-        503,
-      );
-    }
-
     const bundle = resolveCreditPlansBundle(db, config);
     const plan = findPlanForPay(bundle.plans, row.plan_id, row.chain_id, row.token_symbol);
     if (!plan) {
       return c.json({ error: "config_error", message: "Plan for this quote is no longer available." }, 500);
     }
 
-    const rpcUrl = (plan.rpc_url && plan.rpc_url.trim()) || payChain.rpc_url;
+    const vRpc = getVerificationRpcForPlan(db, config, row.plan_id, row.chain_id);
+    if (!vRpc) {
+      return c.json(
+        { error: "chain_not_configured", message: `Chain ${row.chain_id} is not configured on this server.` },
+        503,
+      );
+    }
+
+    const rpcUrl = vRpc.rpcUrl;
     const recipient = row.recipient.trim();
     let minAtomic: bigint;
     try {

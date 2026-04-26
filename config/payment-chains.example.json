@@ -2,6 +2,7 @@
   {
     "chain_id": 42431,
     "rpc_url": "https://rpc.moderato.tempo.xyz",
+    "public_rpc_url": "https://rpc.moderato.tempo.xyz",
     "recipient": "0x0000000000000000000000000000000000000000"
   }
 ]

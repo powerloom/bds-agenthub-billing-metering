@@ -10,17 +10,29 @@ function envNumber(name: string, defaultVal: number): number {
   return Number.isFinite(n) ? n : defaultVal;
 }
 
-/** Per-chain RPC + treasury; `rpc_url` in API responses is redacted when keys are in the path. */
+/**
+ * Public GET /credits/plans `chains[]` entry: `rpc_url` is the **client-safe** URL only
+ * (`public_rpc_url` from server config, stripped of userinfo/query). Never the private RPC.
+ */
 export type PlanChainMeta = {
   chain_id: number;
+  /** Public JSON-RPC hint for agents; empty string if not configured (use docs / own RPC). */
   rpc_url: string;
   recipient: string;
 };
 
 export type PaymentChainConfig = {
   chain_id: number;
-  /** Full URL including API key when applicable (server-only; not exposed in redacted form). */
+  /**
+   * Server-only JSON-RPC for payment verification and internal eth calls — never sent on
+   * `GET /credits/plans` or `rpc_hint`; may include private `/v1/…` paths.
+   */
   rpc_url: string;
+  /**
+   * Optional URL safe to return to API clients (rate-limited public node, etc.). If unset,
+   * public bundle fields use an empty `rpc_url` for this chain.
+   */
+  public_rpc_url?: string;
   recipient: string;
 };
 
@@ -125,7 +137,15 @@ export function parsePaymentChainsFromEnv(): PaymentChainConfig[] {
     const rpcFromEnv = (process.env.TEMPO_RPC_URL ?? process.env.MPP_TEMPO_RPC_URL ?? "").trim();
     const rpcUrl = rpcFromEnv || DEFAULT_TEMPO_RPC;
     const recipient = (process.env.MPP_TEMPO_RECIPIENT ?? "").trim();
-    return [{ chain_id: chainId, rpc_url: rpcUrl, recipient }];
+    const publicRpc = (process.env.TEMPO_PUBLIC_RPC_URL ?? process.env.MPP_TEMPO_PUBLIC_RPC_URL ?? "").trim();
+    return [
+      {
+        chain_id: chainId,
+        rpc_url: rpcUrl,
+        recipient,
+        ...(publicRpc ? { public_rpc_url: publicRpc } : {}),
+      },
+    ];
   }
   const { raw, configLabel } = loaded;
   let parsed: unknown;
@@ -169,7 +189,12 @@ export function parsePaymentChainsFromEnv(): PaymentChainConfig[] {
       );
     }
     seen.add(chainId);
-    out.push({ chain_id: chainId, rpc_url: rpcUrl, recipient });
+    const publicRpc = String(o.public_rpc_url ?? "").trim();
+    out.push(
+      publicRpc
+        ? { chain_id: chainId, rpc_url: rpcUrl, public_rpc_url: publicRpc, recipient }
+        : { chain_id: chainId, rpc_url: rpcUrl, recipient },
+    );
   }
   return out;
 }
@@ -301,7 +326,7 @@ export type AppConfig = {
   creditPlansSource: "db" | "env";
   /** Max on-chain top-up attempts per API key per rolling minute (spam guard). */
   creditTopupRatePerMinute: number;
-  /** Unredacted: server-side verification and `getPaymentChainById`. */
+  /** Full chain rows: `rpc_url` for server verification; optional `public_rpc_url` for API responses. */
   paymentChains: PaymentChainConfig[];
   /** Which `chain_id` drives `primary_*` on `GET /credits/plans` (see `loadConfig` for precedence). */
   paymentChainsPrimaryId: number;

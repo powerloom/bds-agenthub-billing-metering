@@ -1,8 +1,8 @@
 import Database from "better-sqlite3";
 import { Hono } from "hono";
 import type { AppConfig, CreditPlan, CreditPlansBundle } from "../config.js";
-import { getPaymentChainById } from "../config.js";
 import { resolveCreditPlansBundle } from "../lib/credit-plans-resolve.js";
+import { getVerificationRpcForPlan } from "../lib/plan-verification-rpc.js";
 import { extractApiKey, lookupApiKey } from "../lib/auth.js";
 import { randomUuid } from "../lib/crypto.js";
 import { parseDecimalToAtomicUnits } from "../lib/parse-units.js";
@@ -110,8 +110,8 @@ export function createCreditsRoutes(db: SqliteDb, config: AppConfig) {
         );
       }
 
-      const payChain = getPaymentChainById(config, plan.chain_id);
-      if (!payChain) {
+      const v = getVerificationRpcForPlan(db, config, planId, planChain);
+      if (!v) {
         return c.json(
           {
             error: "chain_not_configured",
@@ -121,8 +121,8 @@ export function createCreditsRoutes(db: SqliteDb, config: AppConfig) {
         );
       }
 
-      const rpcUrl = (plan.rpc_url && plan.rpc_url.trim()) || payChain.rpc_url;
-      const topupRecipient = (plan.recipient && plan.recipient.trim()) || payChain.recipient;
+      const rpcUrl = v.rpcUrl;
+      const topupRecipient = v.recipient;
       if (!topupRecipient.trim()) {
         return c.json(
           {
