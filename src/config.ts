@@ -250,9 +250,6 @@ function creditPlanFromEnvJson(x: unknown, defaultChainId: number): CreditPlan {
   if (typeof r.recipient === "string" && r.recipient.trim()) {
     plan.recipient = r.recipient.trim();
   }
-  if (r.offer != null && String(r.offer).trim() !== "") {
-    plan.offer = String(r.offer);
-  }
   const pk = r.payment_kind;
   if (pk === "native_value") {
     plan.payment_kind = "native_value";

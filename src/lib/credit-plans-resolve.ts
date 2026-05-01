@@ -115,7 +115,6 @@ export function resolveCreditPlansBundle(db: SqliteDb, config: AppConfig): Credi
       chain_id: r.chain_id,
       label: r.label,
       description: r.description,
-      offer: r.offer ?? undefined,
       active: r.active === 1,
       payment_kind: pk,
     };
