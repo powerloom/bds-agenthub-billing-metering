@@ -20,7 +20,11 @@ npm run dev
 # or: node dist/index.js
 ```
 
+After pulling updates, run **`npm install`** (root and `web/` if you build the dashboard) and periodically **`npm audit`**; the repo pins current majors for Hono, Next, and React—refresh when advisories apply.
+
 Environment variables are read from **`.env` in the process working directory** (`dotenv` at startup). Existing `process.env` values are not overwritten. For production, you can also set vars via systemd, Docker, or the shell instead of `.env`.
+
+**SQLite:** The database file lives at **`data/signup.db`** under the repo root (default **`DB_PATH=./data/signup.db`** in `.env.example`). Use the **same** `DB_PATH` for the server, `npm run seed:plans`, and `npm run admin`.
 
 ## Configuration (Turnstile / captcha)
 
@@ -58,7 +62,7 @@ Example file: `config/payment-chains.example.json` in this repo (copy to your se
 3. **Fill / refresh plan rows** with the seed script (same `DB_PATH` the server uses):
    ```bash
    cd bds-agenthub-billing-metering
-   export DB_PATH=/path/to/signup.db   # must match the running service
+   export DB_PATH=./data/signup.db   # must match the running service (repo: data/signup.db)
    npm run seed:plans
    ```
    This executes `src/scripts/seed-credit-plans.ts`, which `INSERT OR IGNORE`s rows from `src/lib/seed-credit-plans.ts` (`DEFAULT_CREDIT_PLAN_SEEDS`). Existing `(id, chain_id)` pairs are left unchanged; to change amounts or `payment_kind`, use the **admin CLI** (same `DB_PATH` as the server) or delete the old row and seed again.
