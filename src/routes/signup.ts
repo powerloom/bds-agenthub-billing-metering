@@ -1,8 +1,11 @@
+import Database from "better-sqlite3";
 import { Hono } from "hono";
 import type { AppConfig } from "../config.js";
 import type { SqliteDb } from "../types.js";
 import {
   generateUserCode,
+  randomApiKey,
+  randomOrgId,
   randomSessionToken,
   randomUuid,
   sha256Hex,
@@ -24,6 +27,74 @@ function expiresAtIso(seconds: number): string {
 
 export function createSignupRoutes(db: SqliteDb, config: AppConfig) {
   const r = new Hono();
+
+  /** Email/device flow: mint key + bonus on first poll; legacy rows get one hash update. Wallet rotation is only `/api-key/recover/*`. */
+  const deliverDeviceSignupKey = db.transaction((sessionId: string, email: string) => {
+    const ts = nowIso();
+    const sess = db
+      .prepare(`SELECT credentials_delivered, status FROM signup_sessions WHERE id = ?`)
+      .get(sessionId) as { credentials_delivered: number; status: string } | undefined;
+
+    if (!sess || sess.status !== "approved") {
+      throw new Error("session_not_ready");
+    }
+    if (Number(sess.credentials_delivered) === 1) {
+      return { kind: "already_delivered" as const };
+    }
+
+    const existing = db
+      .prepare(
+        `SELECT org_id, rate_limit_rpm, rate_limit_rpd FROM api_keys WHERE session_id = ?`,
+      )
+      .get(sessionId) as
+      | {
+          org_id: string;
+          rate_limit_rpm: number;
+          rate_limit_rpd: number;
+        }
+      | undefined;
+
+    if (!existing) {
+      const rk = randomApiKey();
+      const keyHash = sha256Hex(rk);
+      const orgId = randomOrgId();
+      const keyId = randomUuid();
+      const credits = config.freeTierCredits;
+      db.prepare(
+        `INSERT INTO api_keys (
+          id, session_id, email, api_key_hash, org_id,
+          credit_balance, total_credits_purchased, total_credits_used,
+          rate_limit_rpm, rate_limit_rpd, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 60, 1000, ?)`,
+      ).run(keyId, sessionId, email, keyHash, orgId, credits, ts);
+      const txId = randomUuid();
+      db.prepare(
+        `INSERT INTO credit_transactions (
+           id, api_key_id, amount, type, description, tx_hash, chain_id, plan_id, created_at
+         ) VALUES (?, ?, ?, 'signup_bonus', 'Free tier credits on signup', NULL, NULL, NULL, ?)`,
+      ).run(txId, keyId, credits, ts);
+      db.prepare(
+        `UPDATE signup_sessions SET credentials_delivered = 1, session_token_raw = '' WHERE id = ?`,
+      ).run(sessionId);
+      return { kind: "ok" as const, rawKey: rk, orgId, rpm: 60, rpd: 1000 };
+    }
+
+    const rk = randomApiKey();
+    db.prepare(`UPDATE api_keys SET api_key_hash = ? WHERE session_id = ?`).run(
+      sha256Hex(rk),
+      sessionId,
+    );
+    db.prepare(
+      `UPDATE signup_sessions SET credentials_delivered = 1, session_token_raw = '' WHERE id = ?`,
+    ).run(sessionId);
+    return {
+      kind: "ok" as const,
+      rawKey: rk,
+      orgId: existing.org_id,
+      rpm: existing.rate_limit_rpm,
+      rpd: existing.rate_limit_rpd,
+    };
+  });
 
   r.post("/signup/initiate", async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -174,26 +245,34 @@ export function createSignupRoutes(db: SqliteDb, config: AppConfig) {
       if (delivered) {
         return c.json({ error: "not_found" }, 404);
       }
-      const keyRow = db
-        .prepare(`SELECT * FROM api_keys WHERE session_id = ?`)
-        .get(id) as { api_key_raw: string | null; org_id: string; rate_limit_rpm: number; rate_limit_rpd: number } | undefined;
 
-      if (!keyRow?.api_key_raw) {
+      const email = String(row.email);
+      let out: ReturnType<typeof deliverDeviceSignupKey.immediate>;
+      try {
+        out = deliverDeviceSignupKey.immediate(id, email);
+      } catch (e) {
+        if (e instanceof Database.SqliteError && e.code === "SQLITE_CONSTRAINT_UNIQUE") {
+          const s = db
+            .prepare(`SELECT credentials_delivered FROM signup_sessions WHERE id = ?`)
+            .get(id) as { credentials_delivered: number } | undefined;
+          if (Number(s?.credentials_delivered) === 1) {
+            return c.json({ error: "not_found" }, 404);
+          }
+        }
+        throw e;
+      }
+
+      if (out.kind === "already_delivered") {
         return c.json({ error: "not_found" }, 404);
       }
 
-      db.prepare(
-        `UPDATE signup_sessions SET credentials_delivered = 1, session_token_raw = '' WHERE id = ?`,
-      ).run(id);
-      db.prepare(`UPDATE api_keys SET api_key_raw = NULL WHERE session_id = ?`).run(id);
-
       return c.json({
         status: "approved",
-        api_key: keyRow.api_key_raw,
-        org_id: keyRow.org_id,
+        api_key: out.rawKey,
+        org_id: out.orgId,
         rate_limits: {
-          requests_per_minute: keyRow.rate_limit_rpm,
-          requests_per_day: keyRow.rate_limit_rpd,
+          requests_per_minute: out.rpm,
+          requests_per_day: out.rpd,
         },
       });
     }

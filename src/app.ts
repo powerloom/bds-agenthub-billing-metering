@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import type { AppConfig } from "./config.js";
 import { createCreditsRoutes } from "./routes/credits.js";
 import { createInternalBillingRoutes } from "./routes/internal-billing.js";
+import { createApiKeyRecoverRoutes } from "./routes/api-key-recover.js";
 import { createSignupPayRoutes } from "./routes/signup-pay.js";
 import { createSignupRoutes } from "./routes/signup.js";
 import { createVerifyRoutes } from "./routes/verify.js";
@@ -31,6 +32,7 @@ export function createApp(db: SqliteDb, config: AppConfig) {
   app.use("/metering/*", meteringStatic);
   app.route("/", createSignupRoutes(db, config));
   app.route("/", createSignupPayRoutes(db, config));
+  app.route("/", createApiKeyRecoverRoutes(db, config));
   app.route("/", createVerifyRoutes(db, config));
   app.route("/", createCreditsRoutes(db, config));
   app.route("/", createInternalBillingRoutes(db, config));

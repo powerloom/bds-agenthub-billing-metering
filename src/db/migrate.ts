@@ -282,4 +282,57 @@ export function migrateIfNeeded(db: SqliteDb): void {
     }
   }
   renameCreditTransactionsTempoToCanonical(db);
+  ensureApiKeyRecoveryChallengesTable(db);
+  dropApiKeyRawColumnIfExists(db);
+  ensureUniqueApiKeysDeviceSession(db);
+}
+
+/** Remove legacy plaintext column if present (SQLite 3.35+ DROP COLUMN). */
+function dropApiKeyRawColumnIfExists(db: SqliteDb): void {
+  if (!tableExists(db, "api_keys")) {
+    return;
+  }
+  const cols = db.prepare(`PRAGMA table_info(api_keys)`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "api_key_raw")) {
+    return;
+  }
+  try {
+    db.exec(`ALTER TABLE api_keys DROP COLUMN api_key_raw`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(
+      `[bds-agenthub-billing-metering] migrate: could not DROP COLUMN api_key_raw (optional; SQLite 3.35+): ${msg}`,
+    );
+  }
+}
+
+/**
+ * One API key row per email/device signup session. Pay-signup shares a placeholder session_id
+ * across many keys, so they are excluded from this partial unique index.
+ */
+function ensureUniqueApiKeysDeviceSession(db: SqliteDb): void {
+  if (!tableExists(db, "api_keys")) {
+    return;
+  }
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_api_keys_device_session
+    ON api_keys(session_id)
+    WHERE session_id != 'b0000000-0000-4000-8000-00000000pay1'
+  `);
+}
+
+function ensureApiKeyRecoveryChallengesTable(db: SqliteDb): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS api_key_recovery_challenges (
+      id TEXT PRIMARY KEY,
+      address_lower TEXT NOT NULL,
+      nonce TEXT NOT NULL UNIQUE,
+      message TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_api_key_recovery_challenges_addr ON api_key_recovery_challenges(address_lower)`,
+  );
 }

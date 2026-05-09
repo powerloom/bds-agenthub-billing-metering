@@ -331,6 +331,8 @@ export type AppConfig = {
   termsVersion: string;
   /** Pay-signup quote lifetime (device-auth is unchanged). */
   signupPayQuoteTtlSec: number;
+  /** Wallet-signed API key recovery (`POST /api-key/recover/*`) challenge lifetime */
+  apiKeyRecoveryChallengeTtlSec: number;
 };
 
 export function getPrimaryPaymentChain(config: AppConfig): PaymentChainConfig {
@@ -430,5 +432,9 @@ export function loadConfig(): AppConfig {
     termsUrl,
     termsVersion,
     signupPayQuoteTtlSec: Math.max(60, Math.round(envNumber("SIGNUP_PAY_QUOTE_TTL_SEC", 1800))),
+    apiKeyRecoveryChallengeTtlSec: Math.max(
+      60,
+      Math.round(envNumber("API_KEY_RECOVERY_CHALLENGE_TTL_SEC", 600)),
+    ),
   };
 }

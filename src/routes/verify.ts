@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import type { AppConfig } from "../config.js";
 import type { SqliteDb } from "../types.js";
 import { verifyTurnstile } from "../lib/captcha.js";
-import { randomApiKey, randomOrgId, randomUuid, sha256Hex } from "../lib/crypto.js";
 import { normalizeUserCode } from "../lib/validate.js";
 
 function esc(s: string): string {
@@ -151,32 +150,10 @@ export function createVerifyRoutes(db: SqliteDb, config: AppConfig) {
     }
 
     const sessionId = String(row.id);
-    const email = String(row.email);
-
-    const rawKey = randomApiKey();
-    const keyHash = sha256Hex(rawKey);
-    const orgId = randomOrgId();
-    const keyId = randomUuid();
-    const credits = config.freeTierCredits;
 
     db.prepare(
       `UPDATE signup_sessions SET status = 'approved', verified_at = ?, ip_address = ?, user_agent = ? WHERE id = ?`,
     ).run(now, ip, ua, sessionId);
-
-    db.prepare(
-      `INSERT INTO api_keys (
-        id, session_id, email, api_key_hash, api_key_raw, org_id,
-        credit_balance, total_credits_purchased, total_credits_used,
-        rate_limit_rpm, rate_limit_rpd, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 60, 1000, ?)`,
-    ).run(keyId, sessionId, email, keyHash, rawKey, orgId, credits, now);
-
-    const txId = randomUuid();
-    db.prepare(
-      `INSERT INTO credit_transactions (
-         id, api_key_id, amount, type, description, tx_hash, chain_id, plan_id, created_at
-       ) VALUES (?, ?, ?, 'signup_bonus', 'Free tier credits on signup', NULL, NULL, NULL, ?)`,
-    ).run(txId, keyId, credits, now);
 
     return c.html(successPage());
   });

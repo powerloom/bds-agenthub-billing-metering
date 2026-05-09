@@ -420,16 +420,15 @@ export function createSignupPayRoutes(db: SqliteDb, config: AppConfig) {
       db.transaction(() => {
         db.prepare(
           `INSERT INTO api_keys (
-             id, session_id, email, api_key_hash, api_key_raw, org_id, payer_address,
+             id, session_id, email, api_key_hash, org_id, payer_address,
              credit_balance, total_credits_purchased, total_credits_used,
              rate_limit_rpm, rate_limit_rpd, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 60, 1000, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 60, 1000, ?)`,
         ).run(
           keyId,
           PAY_RAIL_PLACEHOLDER_SESSION_ID,
           emailToStore,
           keyHash,
-          rawKey,
           orgId,
           row.payer_address,
           balance,

@@ -18,13 +18,12 @@ CREATE TABLE IF NOT EXISTS signup_sessions (
 CREATE INDEX IF NOT EXISTS idx_signup_sessions_email ON signup_sessions(email);
 CREATE INDEX IF NOT EXISTS idx_signup_sessions_user_code ON signup_sessions(user_code);
 
--- api_keys: issued after human verifies (raw key shown once via status poll)
+-- api_keys: only api_key_hash is stored; API secrets are shown once at mint/rotate time.
 CREATE TABLE IF NOT EXISTS api_keys (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES signup_sessions(id),
   email TEXT NOT NULL,
   api_key_hash TEXT UNIQUE NOT NULL,
-  api_key_raw TEXT,
   org_id TEXT NOT NULL,
   credit_balance REAL NOT NULL DEFAULT 10.0,
   total_credits_purchased REAL NOT NULL DEFAULT 0,
@@ -39,6 +38,8 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE INDEX IF NOT EXISTS idx_api_keys_session ON api_keys(session_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_email ON api_keys(email);
 CREATE INDEX IF NOT EXISTS idx_api_keys_payer ON api_keys(payer_address) WHERE payer_address IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_api_keys_device_session ON api_keys(session_id)
+  WHERE session_id != 'b0000000-0000-4000-8000-00000000pay1';
 
 CREATE TABLE IF NOT EXISTS credit_transactions (
   id TEXT PRIMARY KEY,
@@ -105,3 +106,16 @@ CREATE TABLE IF NOT EXISTS signup_payment_quotes (
 
 CREATE INDEX IF NOT EXISTS idx_quotes_pending_per_payer
   ON signup_payment_quotes(payer_address, plan_id, chain_id, consumed_at);
+
+-- One-time server-issued messages for POST /api-key/recover/verify (wallet proves payer_address)
+CREATE TABLE IF NOT EXISTS api_key_recovery_challenges (
+  id TEXT PRIMARY KEY,
+  address_lower TEXT NOT NULL,
+  nonce TEXT NOT NULL UNIQUE,
+  message TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_key_recovery_challenges_addr
+  ON api_key_recovery_challenges(address_lower);
