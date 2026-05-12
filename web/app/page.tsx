@@ -93,7 +93,7 @@ export default function Home() {
     };
     const id = window.setInterval(() => {
       void tick();
-    }, 2000);
+    }, 4000);
     void tick();
     return () => {
       cancelled = true;
