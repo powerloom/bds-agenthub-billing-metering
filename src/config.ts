@@ -214,9 +214,9 @@ function defaultPlansBundle(
     primary_chain_id: chainId,
     primary_rpc_url: rpcUrl,
     epoch_unit: {
-      credits_per_epoch: 10 / 7200,
-      epochs_per_credit: 720,
-      note: "1 credit = 720 epochs.",
+      credits_per_epoch: 1 / 7200,
+      epochs_per_credit: 7200,
+      note: "1 credit = 7200 epochs.",
     },
   };
 }
@@ -310,7 +310,7 @@ export type AppConfig = {
   devTopupSecret: string;
   /** Shared with BDS Core API for POST /internal/billing/deduct */
   internalBillingSecret: string;
-  /** One GET /mpp/snapshot/... per epoch (10 credits ≈ 7200 epochs on mainnet) */
+  /** One GET /mpp/snapshot/... per epoch (1 credit = 7200 epochs on mainnet) */
   creditPerEpoch: number;
   /** Flat credits for one SSE connection (e.g. /mpp/stream/allTrades) */
   creditPerStreamSession: number;
@@ -422,7 +422,7 @@ export function loadConfig(): AppConfig {
     billingTopupUrl: (process.env.BILLING_TOPUP_URL ?? "https://powerloom.io").replace(/\/$/, ""),
     devTopupSecret: process.env.DEV_TOPUP_SECRET ?? "",
     internalBillingSecret: process.env.INTERNAL_BILLING_SECRET ?? "",
-    creditPerEpoch: Math.max(1e-12, envNumber("CREDIT_PER_EPOCH", 10 / 7200)),
+    creditPerEpoch: Math.max(1e-12, envNumber("CREDIT_PER_EPOCH", 1 / 7200)),
     creditPerStreamSession: Math.max(1e-12, envNumber("CREDIT_PER_STREAM_SESSION", 0.01)),
     creditPlansFallback,
     creditPlansSource,
