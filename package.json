@@ -10,6 +10,7 @@
     "build": "npm run build:web && tsc && cp src/db/schema.sql dist/db/",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
     "seed:plans": "tsx src/scripts/seed-credit-plans.ts",
     "admin": "tsx src/scripts/billing-admin.ts",
     "rotate-api-key": "tsx src/scripts/rotate-api-key.ts"

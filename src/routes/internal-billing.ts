@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { AppConfig } from "../config.js";
 import { extractApiKey, lookupApiKey } from "../lib/auth.js";
 import { randomUuid } from "../lib/crypto.js";
+import { buildUsageMetadata } from "../lib/usage-metadata.js";
 import type { SqliteDb } from "../types.js";
 
 function deductAmountForPath(config: AppConfig, path: string): number {
@@ -35,28 +36,26 @@ export function createInternalBillingRoutes(db: SqliteDb, config: AppConfig) {
     }
 
     const body = await c.req.json().catch(() => ({}));
-    const path =
-      typeof body === "object" && body && typeof (body as { path?: unknown }).path === "string"
-        ? String((body as { path: string }).path)
-        : "";
-    const method =
-      typeof body === "object" && body && typeof (body as { method?: unknown }).method === "string"
-        ? String((body as { method: string }).method)
-        : "";
+    const obj = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const usage = buildUsageMetadata({
+      path: obj.path,
+      method: obj.method,
+      route_template: obj.route_template,
+      client_source: obj.client_source,
+    });
 
     const row = lookupApiKey(db, raw);
     if (!row) {
       return c.json({ error: "unauthorized", message: "Invalid or revoked API key" }, 401);
     }
 
-    const amount = deductAmountForPath(config, path || "/mpp/snapshot");
+    const amount = deductAmountForPath(config, usage.requestPath || "/mpp/snapshot");
     if (!Number.isFinite(amount) || amount <= 0) {
       return c.json({ error: "config_error", message: "Invalid credit amounts in server config" }, 500);
     }
 
     const now = new Date().toISOString();
     const txId = randomUuid();
-    const desc = `usage ${method} ${path || "unknown"}`.slice(0, 500);
 
     const run = db.transaction(() => {
       const cur = db
@@ -76,9 +75,21 @@ export function createInternalBillingRoutes(db: SqliteDb, config: AppConfig) {
       ).run(amount, amount, row.id);
       db.prepare(
         `INSERT INTO credit_transactions (
-           id, api_key_id, amount, type, description, tx_hash, chain_id, plan_id, created_at
-         ) VALUES (?, ?, ?, 'usage', ?, NULL, NULL, NULL, ?)`,
-      ).run(txId, row.id, -amount, desc, now);
+           id, api_key_id, amount, type, description,
+           http_method, route_template, request_path, client_source,
+           tx_hash, chain_id, plan_id, created_at
+         ) VALUES (?, ?, ?, 'usage', ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
+      ).run(
+        txId,
+        row.id,
+        -amount,
+        usage.description,
+        usage.httpMethod,
+        usage.routeTemplate,
+        usage.requestPath,
+        usage.clientSource,
+        now,
+      );
       const after = db
         .prepare(`SELECT credit_balance FROM api_keys WHERE id = ?`)
         .get(row.id) as { credit_balance: number };

@@ -8,9 +8,42 @@ import { randomUuid } from "../lib/crypto.js";
 import { parseDecimalToAtomicUnits } from "../lib/parse-units.js";
 import { createRateLimiter } from "../lib/rate-limit.js";
 import { verifyErc20Payment, verifyNativeValuePayment } from "../lib/payment-verify.js";
+import { queryUsageByEndpoint } from "../lib/usage-metadata.js";
 import type { SqliteDb } from "../types.js";
 
 const HEX64 = /^0x[a-fA-F0-9]{64}$/;
+
+type UsageTransactionRow = {
+  id: string;
+  amount: number;
+  type: string;
+  description: string | null;
+  http_method: string | null;
+  route_template: string | null;
+  request_path: string | null;
+  client_source: string | null;
+  tx_hash: string | null;
+  chain_id: number | null;
+  plan_id: string | null;
+  created_at: string;
+};
+
+function mapUsageTransaction(t: UsageTransactionRow) {
+  return {
+    id: t.id,
+    amount: t.amount,
+    type: t.type,
+    description: t.description,
+    http_method: t.http_method,
+    route_template: t.route_template,
+    request_path: t.request_path,
+    client_source: t.client_source,
+    tx_hash: t.tx_hash,
+    chain_id: t.chain_id,
+    plan_id: t.plan_id,
+    created_at: t.created_at,
+  };
+}
 
 function normalizeTxHash(h: string): string {
   const x = h.trim();
@@ -275,34 +308,47 @@ export function createCreditsRoutes(db: SqliteDb, config: AppConfig) {
 
     const rows = db
       .prepare(
-        `SELECT id, amount, type, description, tx_hash, chain_id, plan_id, created_at
+        `SELECT id, amount, type, description, http_method, route_template, request_path,
+                client_source, tx_hash, chain_id, plan_id, created_at
          FROM credit_transactions
          WHERE api_key_id = ?
          ORDER BY created_at DESC
          LIMIT ?`,
       )
-      .all(row.id, limit) as Array<{
-        id: string;
-        amount: number;
-        type: string;
-        description: string | null;
-        tx_hash: string | null;
-        chain_id: number | null;
-        plan_id: string | null;
-        created_at: string;
-      }>;
+      .all(row.id, limit) as UsageTransactionRow[];
 
     return c.json({
       org_id: row.org_id,
-      transactions: rows.map((t) => ({
-        id: t.id,
-        amount: t.amount,
-        type: t.type,
-        description: t.description,
-        tx_hash: t.tx_hash,
-        chain_id: t.chain_id,
-        plan_id: t.plan_id,
-        created_at: t.created_at,
+      transactions: rows.map(mapUsageTransaction),
+    });
+  });
+
+  r.get("/credits/usage/by-endpoint", (c) => {
+    const raw = extractApiKey(c);
+    if (!raw) {
+      return c.json({ error: "unauthorized", message: "Send Authorization: Bearer <api_key> or X-API-Key" }, 401);
+    }
+    const row = lookupApiKey(db, raw);
+    if (!row) {
+      return c.json({ error: "unauthorized", message: "Invalid or revoked API key" }, 401);
+    }
+
+    const daysRaw = c.req.query("days");
+    const days = Math.min(90, Math.max(1, Number(daysRaw ?? "30") || 30));
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+    const limitRaw = c.req.query("limit");
+    const limit = Math.min(200, Math.max(1, Number(limitRaw ?? "50") || 50));
+
+    const byEndpoint = queryUsageByEndpoint(db, row.id, since, limit);
+
+    return c.json({
+      org_id: row.org_id,
+      window_days: days,
+      by_endpoint: byEndpoint.map((e) => ({
+        route_template: e.route_template,
+        http_method: e.http_method,
+        call_count: e.call_count,
+        credits_used: e.credits_used,
       })),
     });
   });
@@ -333,6 +379,8 @@ export function createCreditsRoutes(db: SqliteDb, config: AppConfig) {
       )
       .all(row.id, since) as Array<{ day: string; credits_used: number; usage_events: number }>;
 
+    const byEndpoint = queryUsageByEndpoint(db, row.id, since, 50);
+
     const totals = db
       .prepare(
         `SELECT
@@ -361,6 +409,12 @@ export function createCreditsRoutes(db: SqliteDb, config: AppConfig) {
         credits_added: totals.credits_added ?? 0,
       },
       by_day: byDay,
+      by_endpoint: byEndpoint.map((e) => ({
+        route_template: e.route_template,
+        http_method: e.http_method,
+        call_count: e.call_count,
+        credits_used: e.credits_used,
+      })),
     });
   });
 

@@ -6,6 +6,8 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
+const STORAGE_KEY = "bds_metering_api_key";
+
 type InitiateOk = {
   session_token: string;
   verification_url: string;
@@ -223,6 +225,19 @@ export default function Home() {
               Set <code className="text-zinc-400">POWERLOOM_API_KEY</code> to this value in your shell or
               OpenClaw env.
             </p>
+            <a
+              href="/metering/account"
+              className="inline-block rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-zinc-900"
+              onClick={() => {
+                try {
+                  sessionStorage.setItem(STORAGE_KEY, phase.key);
+                } catch {
+                  /* ignore */
+                }
+              }}
+            >
+              View usage →
+            </a>
           </section>
         ) : (
           <section id="signup" className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-4">

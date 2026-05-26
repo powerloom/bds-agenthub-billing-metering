@@ -282,9 +282,33 @@ export function migrateIfNeeded(db: SqliteDb): void {
     }
   }
   renameCreditTransactionsTempoToCanonical(db);
+  ensureCreditTransactionsUsageColumns(db);
   ensureApiKeyRecoveryChallengesTable(db);
   dropApiKeyRawColumnIfExists(db);
   ensureUniqueApiKeysDeviceSession(db);
+}
+
+function ensureCreditTransactionsUsageColumns(db: SqliteDb): void {
+  if (!tableExists(db, "credit_transactions")) {
+    return;
+  }
+  const names = transColumnSet(db);
+  if (!names.has("http_method")) {
+    db.exec(`ALTER TABLE credit_transactions ADD COLUMN http_method TEXT`);
+  }
+  if (!names.has("route_template")) {
+    db.exec(`ALTER TABLE credit_transactions ADD COLUMN route_template TEXT`);
+  }
+  if (!names.has("request_path")) {
+    db.exec(`ALTER TABLE credit_transactions ADD COLUMN request_path TEXT`);
+  }
+  if (!names.has("client_source")) {
+    db.exec(`ALTER TABLE credit_transactions ADD COLUMN client_source TEXT`);
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_credit_tx_usage_endpoint
+      ON credit_transactions(api_key_id, type, route_template, created_at)
+  `);
 }
 
 /** Remove legacy plaintext column if present (SQLite 3.35+ DROP COLUMN). */

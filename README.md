@@ -78,11 +78,12 @@ The repo includes a **Powerloom 7869 native (CGT)** example row in `seed-credit-
 
 ### Billing (SQL) + BDS Core API
 
-- **Public**: `GET /credits/balance`, `GET /credits/usage`, `GET /credits/usage/summary?days=7` — same API key auth as balance.
+- **Public**: `GET /credits/balance`, `GET /credits/usage`, `GET /credits/usage/summary?days=7`, `GET /credits/usage/by-endpoint?days=30&limit=50` — same API key auth as balance. Usage rows include `route_template`, `client_source` when Core API sends structured deduct metadata.
+- **Account UI**: `GET /metering/account` — paste API key (sessionStorage); shows balance, usage-by-day, top endpoints, recent ledger.
 - **Signup bonus:** `FREE_TIER_CREDITS` (default **2**) credits on first successful `/verify` — override in env.
-- **Internal** (Core API only): `POST /internal/billing/deduct` — header `X-BDS-Internal-Billing-Secret` (must match env `INTERNAL_BILLING_SECRET`), forward the client’s `Authorization: Bearer sk_live_...`, JSON body `{ "path", "method" }`. Deducts `CREDIT_PER_STREAM_SESSION` for `/mpp/stream/...`, else `CREDIT_PER_EPOCH` (default **`10/7200`** credits per snapshot GET — i.e. **1 credit ≈ 720** such GETs at default pricing). Returns **402** if insufficient credits.
+- **Internal** (Core API only): `POST /internal/billing/deduct` — header `X-BDS-Internal-Billing-Secret` (must match env `INTERNAL_BILLING_SECRET`), forward the client’s `Authorization: Bearer sk_live_...`, JSON body `{ path, method, route_template?, client_source? }`. Deducts `CREDIT_PER_STREAM_SESSION` for `/mpp/stream/...`, else `CREDIT_PER_EPOCH` (default **`10/7200`** credits per snapshot GET — i.e. **1 credit ≈ 720** such GETs at default pricing). Returns **402** if insufficient credits.
 
-Configure Core API with `MPP_BILLING_MODE=signup_api`, `MPP_SIGNUP_BILLING_URL`, `MPP_INTERNAL_BILLING_SECRET` (same value as signup server).
+Configure Core API with `MPP_BILLING_MODE=signup_api`, `MPP_SIGNUP_BILLING_URL`, `MPP_INTERNAL_BILLING_SECRET` (same value as signup server), optional `MPP_ENDPOINTS_CATALOG_JSON` for route-template matching (defaults to pinned `snapshotter-computes` `api/endpoints.json` on GitHub).
 
 ## Web UI (`/metering`)
 
@@ -101,8 +102,9 @@ Browser signup + top-up shell (Next.js static export in `web/`, built into `web/
 - Verify (browser): `GET /verify` and `POST /verify`
 - Balance: `GET /credits/balance` with `Authorization: Bearer <api_key>` or `X-API-Key`
 - Top-up: `POST /credits/topup` — returns billing info until checkout is integrated; optional `DEV_TOPUP_SECRET` + header `X-BDS-Dev-Topup-Secret` for dev-only credit adds (see `.env.example`)
-- Usage: `GET /credits/usage?limit=100`, `GET /credits/usage/summary?days=7`
-- Internal billing: `POST /internal/billing/deduct` (Core API + shared secret)
+- Usage: `GET /credits/usage?limit=100`, `GET /credits/usage/summary?days=7`, `GET /credits/usage/by-endpoint?days=30&limit=50`
+- Account UI: `GET /metering/account`
+- Internal billing: `POST /internal/billing/deduct` (Core API + shared secret; body may include `route_template`, `client_source`)
 
 ## API (summary)
 

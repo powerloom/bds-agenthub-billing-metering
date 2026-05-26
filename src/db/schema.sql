@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
   amount REAL NOT NULL,
   type TEXT NOT NULL,
   description TEXT,
+  http_method TEXT,
+  route_template TEXT,
+  request_path TEXT,
+  client_source TEXT,
   tx_hash TEXT,
   chain_id INTEGER,
   plan_id TEXT,
@@ -54,6 +58,8 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_credit_tx_api_key ON credit_transactions(api_key_id);
+CREATE INDEX IF NOT EXISTS idx_credit_tx_usage_endpoint
+  ON credit_transactions(api_key_id, type, route_template, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_credit_transactions_tx_hash ON credit_transactions(tx_hash);
 
 -- credit_plans: GET /credits/plans; same logical `id` may exist per chain.
