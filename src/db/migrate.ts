@@ -1,5 +1,5 @@
 import { PAY_RAIL_PLACEHOLDER_SESSION_ID } from "../lib/pay-rail.js";
-import { DEFAULT_RATE_LIMIT_RPD, DEFAULT_RATE_LIMIT_RPM } from "../config.js";
+import { DEFAULT_RATE_LIMIT_RPD, DEFAULT_RATE_LIMIT_RPM, type AppConfig } from "../config.js";
 import type { SqliteDb } from "../types.js";
 
 function tableExists(db: SqliteDb, name: string): boolean {
@@ -313,7 +313,7 @@ function ensureCreditTransactionsUsageColumns(db: SqliteDb): void {
   `);
 }
 
-/** Keys still on the original 60/1000 defaults get the current product defaults on upgrade. */
+/** Keys still on the original 60/1000 defaults get the built-in product defaults on upgrade. */
 function bumpLegacyDefaultRateLimits(db: SqliteDb): void {
   if (!tableExists(db, "api_keys")) {
     return;
@@ -323,6 +323,31 @@ function bumpLegacyDefaultRateLimits(db: SqliteDb): void {
      SET rate_limit_rpm = ?, rate_limit_rpd = ?
      WHERE rate_limit_rpm = 60 AND rate_limit_rpd = 1000 AND revoked_at IS NULL`,
   ).run(DEFAULT_RATE_LIMIT_RPM, DEFAULT_RATE_LIMIT_RPD);
+}
+
+/**
+ * Push env-configured defaults onto keys still at legacy (60/1000) or built-in (120/1M) pairs.
+ * Admin-custom pairs (e.g. 120/10000) are left unchanged. Call after loadConfig on each process start.
+ */
+export function syncRateLimitDefaultsFromConfig(db: SqliteDb, config: AppConfig): number {
+  if (!tableExists(db, "api_keys")) {
+    return 0;
+  }
+  const rpm = config.defaultRateLimitRpm;
+  const rpd = config.defaultRateLimitRpd;
+  const info = db
+    .prepare(
+      `UPDATE api_keys
+       SET rate_limit_rpm = ?, rate_limit_rpd = ?
+       WHERE revoked_at IS NULL
+         AND (
+           (rate_limit_rpm = 60 AND rate_limit_rpd = 1000)
+           OR (rate_limit_rpm = ? AND rate_limit_rpd = ?)
+         )
+         AND (rate_limit_rpm != ? OR rate_limit_rpd != ?)`,
+    )
+    .run(rpm, rpd, DEFAULT_RATE_LIMIT_RPM, DEFAULT_RATE_LIMIT_RPD, rpm, rpd);
+  return info.changes;
 }
 
 /** Remove legacy plaintext column if present (SQLite 3.35+ DROP COLUMN). */

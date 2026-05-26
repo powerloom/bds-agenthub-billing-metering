@@ -3,15 +3,22 @@ import { serve } from "@hono/node-server";
 import { type AppConfig, loadConfig } from "./config.js";
 import { createApp } from "./app.js";
 import { openDb } from "./db/client.js";
+import { syncRateLimitDefaultsFromConfig } from "./db/migrate.js";
 
 const dbPath = process.env.DB_PATH ?? "./data/signup.db";
-const db = openDb(dbPath);
 let config: AppConfig;
 try {
   config = loadConfig();
 } catch (e) {
   console.error(e instanceof Error ? e.message : e);
   process.exit(1);
+}
+const db = openDb(dbPath);
+const syncedKeys = syncRateLimitDefaultsFromConfig(db, config);
+if (syncedKeys > 0) {
+  console.error(
+    `[bds-agenthub-billing-metering] synced rate limits on ${syncedKeys} api key(s) to ${config.defaultRateLimitRpm}/min, ${config.defaultRateLimitRpd}/day`,
+  );
 }
 const app = createApp(db, config);
 

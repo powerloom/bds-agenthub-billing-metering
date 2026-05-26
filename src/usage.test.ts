@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import Database from "better-sqlite3";
 import { openDb } from "./db/client.js";
+import { syncRateLimitDefaultsFromConfig } from "./db/migrate.js";
 import { createApp } from "./app.js";
 import type { AppConfig } from "./config.js";
 import { randomApiKey, sha256Hex } from "./lib/crypto.js";
@@ -129,6 +130,64 @@ test("deduct persists structured usage and summary rolls up by endpoint", async 
   });
   assert.equal(byEndpointRes.status, 200);
 
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("syncRateLimitDefaultsFromConfig updates legacy and built-in default key pairs", () => {
+  const dir = mkdtempSync(join(tmpdir(), "metering-rl-sync-"));
+  const dbPath = join(dir, "test.db");
+  const db = openDb(dbPath);
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO signup_sessions (
+       id, email, agent_name, session_token_hash, session_token_raw, user_code,
+       status, created_at, expires_at, verified_at, credentials_delivered
+     ) VALUES ('s1', 'a@x.com', 'agent', ?, 's', 'ABCD-EFGH', 'approved', ?, ?, ?, 1)`,
+  ).run(sha256Hex("s1"), now, now, now);
+  db.prepare(
+    `INSERT INTO signup_sessions (
+       id, email, agent_name, session_token_hash, session_token_raw, user_code,
+       status, created_at, expires_at, verified_at, credentials_delivered
+     ) VALUES ('s2', 'b@x.com', 'agent', ?, 's', 'WXYZ-1234', 'approved', ?, ?, ?, 1)`,
+  ).run(sha256Hex("s2"), now, now, now);
+  db.prepare(
+    `INSERT INTO signup_sessions (
+       id, email, agent_name, session_token_hash, session_token_raw, user_code,
+       status, created_at, expires_at, verified_at, credentials_delivered
+     ) VALUES ('s3', 'c@x.com', 'agent', ?, 's', 'PQRS-5678', 'approved', ?, ?, ?, 1)`,
+  ).run(sha256Hex("s3"), now, now, now);
+  db.prepare(
+    `INSERT INTO api_keys (
+       id, session_id, email, api_key_hash, org_id, credit_balance,
+       total_credits_purchased, total_credits_used, rate_limit_rpm, rate_limit_rpd, created_at
+     ) VALUES ('k-legacy', 's1', 'a@x.com', ?, 'o1', 1, 0, 0, 60, 1000, ?)`,
+  ).run(sha256Hex("k1"), now);
+  db.prepare(
+    `INSERT INTO api_keys (
+       id, session_id, email, api_key_hash, org_id, credit_balance,
+       total_credits_purchased, total_credits_used, rate_limit_rpm, rate_limit_rpd, created_at
+     ) VALUES ('k-builtin', 's2', 'b@x.com', ?, 'o2', 1, 0, 0, 120, 1000000, ?)`,
+  ).run(sha256Hex("k2"), now);
+  db.prepare(
+    `INSERT INTO api_keys (
+       id, session_id, email, api_key_hash, org_id, credit_balance,
+       total_credits_purchased, total_credits_used, rate_limit_rpm, rate_limit_rpd, created_at
+     ) VALUES ('k-custom', 's3', 'c@x.com', ?, 'o3', 1, 0, 0, 120, 10000, ?)`,
+  ).run(sha256Hex("k3"), now);
+
+  const config = { ...testConfig(), defaultRateLimitRpm: 300, defaultRateLimitRpd: 5000000 };
+  assert.equal(syncRateLimitDefaultsFromConfig(db, config), 2);
+
+  const rows = db
+    .prepare(`SELECT id, rate_limit_rpm, rate_limit_rpd FROM api_keys ORDER BY id`)
+    .all() as Array<{ id: string; rate_limit_rpm: number; rate_limit_rpd: number }>;
+  assert.deepEqual(rows, [
+    { id: "k-builtin", rate_limit_rpm: 300, rate_limit_rpd: 5000000 },
+    { id: "k-custom", rate_limit_rpm: 120, rate_limit_rpd: 10000 },
+    { id: "k-legacy", rate_limit_rpm: 300, rate_limit_rpd: 5000000 },
+  ]);
+
+  db.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
