@@ -60,13 +60,15 @@ export function createSignupRoutes(db: SqliteDb, config: AppConfig) {
       const orgId = randomOrgId();
       const keyId = randomUuid();
       const credits = config.freeTierCredits;
+      const rpm = config.defaultRateLimitRpm;
+      const rpd = config.defaultRateLimitRpd;
       db.prepare(
         `INSERT INTO api_keys (
           id, session_id, email, api_key_hash, org_id,
           credit_balance, total_credits_purchased, total_credits_used,
           rate_limit_rpm, rate_limit_rpd, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 60, 1000, ?)`,
-      ).run(keyId, sessionId, email, keyHash, orgId, credits, ts);
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`,
+      ).run(keyId, sessionId, email, keyHash, orgId, credits, rpm, rpd, ts);
       const txId = randomUuid();
       db.prepare(
         `INSERT INTO credit_transactions (
@@ -76,7 +78,7 @@ export function createSignupRoutes(db: SqliteDb, config: AppConfig) {
       db.prepare(
         `UPDATE signup_sessions SET credentials_delivered = 1, session_token_raw = '' WHERE id = ?`,
       ).run(sessionId);
-      return { kind: "ok" as const, rawKey: rk, orgId, rpm: 60, rpd: 1000 };
+      return { kind: "ok" as const, rawKey: rk, orgId, rpm, rpd };
     }
 
     const rk = randomApiKey();

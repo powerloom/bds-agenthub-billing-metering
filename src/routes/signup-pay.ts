@@ -423,7 +423,7 @@ export function createSignupPayRoutes(db: SqliteDb, config: AppConfig) {
              id, session_id, email, api_key_hash, org_id, payer_address,
              credit_balance, total_credits_purchased, total_credits_used,
              rate_limit_rpm, rate_limit_rpd, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 60, 1000, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
         ).run(
           keyId,
           PAY_RAIL_PLACEHOLDER_SESSION_ID,
@@ -433,6 +433,8 @@ export function createSignupPayRoutes(db: SqliteDb, config: AppConfig) {
           row.payer_address,
           balance,
           purchased,
+          config.defaultRateLimitRpm,
+          config.defaultRateLimitRpd,
           ts,
         );
 
@@ -469,8 +471,8 @@ export function createSignupPayRoutes(db: SqliteDb, config: AppConfig) {
       api_key: rawKey,
       org_id: orgId,
       rate_limits: {
-        requests_per_minute: 60,
-        requests_per_day: 1000,
+        requests_per_minute: config.defaultRateLimitRpm,
+        requests_per_day: config.defaultRateLimitRpd,
       },
       credit_balance: balance,
       plan_id: row.plan_id,

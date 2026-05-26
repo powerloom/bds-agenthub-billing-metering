@@ -3,6 +3,7 @@ import type { AppConfig } from "../config.js";
 import { extractApiKey, lookupApiKey } from "../lib/auth.js";
 import { randomUuid } from "../lib/crypto.js";
 import { buildUsageMetadata } from "../lib/usage-metadata.js";
+import { createUsageRateLimiter } from "../lib/usage-rate-limit.js";
 import type { SqliteDb } from "../types.js";
 
 function deductAmountForPath(config: AppConfig, path: string): number {
@@ -15,6 +16,7 @@ function deductAmountForPath(config: AppConfig, path: string): number {
 
 export function createInternalBillingRoutes(db: SqliteDb, config: AppConfig) {
   const r = new Hono();
+  const checkUsageRateLimit = createUsageRateLimiter();
 
   /**
    * Called by BDS Core API (MPP middleware) before serving /mpp/... routes.
@@ -47,6 +49,26 @@ export function createInternalBillingRoutes(db: SqliteDb, config: AppConfig) {
     const row = lookupApiKey(db, raw);
     if (!row) {
       return c.json({ error: "unauthorized", message: "Invalid or revoked API key" }, 401);
+    }
+
+    const rateLimits = {
+      requests_per_minute: row.rate_limit_rpm,
+      requests_per_day: row.rate_limit_rpd,
+    };
+    const rl = checkUsageRateLimit(row.id, row.rate_limit_rpm, row.rate_limit_rpd);
+    if (!rl.ok) {
+      const windowLabel = rl.window === "minute" ? "minute" : "day";
+      return c.json(
+        {
+          error: "rate_limited",
+          message: `API rate limit exceeded (${row.rate_limit_rpm}/min, ${row.rate_limit_rpd}/day)`,
+          rate_limits: rateLimits,
+          retry_after_sec: rl.retryAfterSec,
+          limit_window: windowLabel,
+        },
+        429,
+        { "Retry-After": String(rl.retryAfterSec) },
+      );
     }
 
     const amount = deductAmountForPath(config, usage.requestPath || "/mpp/snapshot");

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { MeteringShell } from "../components/MeteringShell";
 
 const STORAGE_KEY = "bds_metering_api_key";
 
@@ -54,6 +55,41 @@ async function apiGet<T>(path: string, apiKey: string): Promise<T> {
 function fmtCredits(n: number): string {
   if (Math.abs(n) >= 1) return n.toFixed(4);
   return n.toFixed(8);
+}
+
+function DataTable({
+  headers,
+  rows,
+}: {
+  headers: string[];
+  rows: ReactNode[][];
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left border-b-2 border-pl-border">
+            {headers.map((h) => (
+              <th key={h} className="py-2 pr-4 pl-label font-normal normal-case tracking-normal">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((cells, i) => (
+            <tr key={i} className="border-b border-pl-border-subtle">
+              {cells.map((cell, j) => (
+                <td key={j} className="py-2 pr-4 text-pl-text-muted last:text-white">
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export default function AccountPage() {
@@ -124,204 +160,158 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
-      <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between gap-4">
-        <span className="text-sm font-medium tracking-tight">Powerloom BDS — Account</span>
-        <a href="/metering/" className="text-sm text-zinc-400 hover:text-zinc-200">
-          Sign up
-        </a>
-      </header>
+    <MeteringShell
+      title="BDS Metering"
+      subtitle="Credit usage & API activity"
+      activeNav="account"
+      maxWidth="7xl"
+    >
+      <section className="space-y-2">
+        <p className="text-pl-text-muted text-sm max-w-2xl">
+          View balance, daily usage, and per-endpoint call counts. Your key stays in this browser tab
+          only (sessionStorage).
+        </p>
+      </section>
 
-      <main className="flex-1 max-w-4xl mx-auto px-6 py-12 flex flex-col gap-8 w-full">
-        <section className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight">Credit usage</h1>
-          <p className="text-zinc-400 text-sm">
-            View balance, daily usage, and per-endpoint call counts. Your key stays in this browser tab
-            only (sessionStorage).
-          </p>
-        </section>
-
-        {!apiKey ? (
-          <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-4">
-            <h2 className="text-lg font-medium">Unlock with API key</h2>
-            <form onSubmit={onUnlock} className="space-y-3">
+      {!apiKey ? (
+        <section className="pl-card p-6 space-y-4 max-w-xl">
+          <h2 className="pl-section-title">Unlock with API key</h2>
+          <form onSubmit={onUnlock} className="space-y-4">
+            <div>
+              <label className="pl-label mb-2" htmlFor="api-key">
+                API key
+              </label>
               <input
+                id="api-key"
                 type="password"
                 autoComplete="off"
-                className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-mono"
+                className="pl-input font-mono"
                 placeholder="sk_live_..."
                 value={apiKeyInput}
                 onChange={(e) => setApiKeyInput(e.target.value)}
               />
-              <button
-                type="submit"
-                className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500"
-              >
-                View usage
-              </button>
-            </form>
-            <p className="text-xs text-zinc-500">
-              Lost your key? Pay-signup users can recover via wallet-signed{" "}
-              <code className="text-zinc-400">POST /api-key/recover/challenge</code> then{" "}
-              <code className="text-zinc-400">POST /api-key/recover/verify</code> (see metering
-              service docs).
-            </p>
-          </section>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <button
-                type="button"
-                onClick={() => void loadData(apiKey)}
-                disabled={loading}
-                className="rounded-lg border border-zinc-700 px-3 py-1.5 hover:bg-zinc-900 disabled:opacity-50"
-              >
-                {loading ? "Loading…" : "Refresh"}
-              </button>
-              <button
-                type="button"
-                onClick={onSignOut}
-                className="text-zinc-500 hover:text-zinc-300 underline"
-              >
-                Sign out
-              </button>
             </div>
+            <button type="submit" className="pl-btn-primary">
+              View usage
+            </button>
+          </form>
+          <p className="text-xs text-pl-text-muted font-mono">
+            Lost your key? Pay-signup users: POST /api-key/recover/challenge then verify (see metering
+            docs).
+          </p>
+        </section>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void loadData(apiKey)}
+              disabled={loading}
+              className="pl-btn-secondary disabled:opacity-50"
+            >
+              {loading ? "Loading…" : "Refresh"}
+            </button>
+            <button type="button" onClick={onSignOut} className="text-sm text-pl-text-muted hover:text-white underline">
+              Sign out
+            </button>
+          </div>
 
-            {err && (
-              <div className="rounded-lg border border-red-900/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">
-                {err}
-              </div>
-            )}
+          {err && (
+            <div className="rounded-lg border-2 border-red-800/80 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+              {err}
+            </div>
+          )}
 
-            {balance && (
-              <section className="grid sm:grid-cols-3 gap-3">
-                {[
-                  { label: "Balance", value: fmtCredits(balance.credit_balance) },
-                  { label: "Credits used (lifetime)", value: fmtCredits(balance.total_credits_used) },
-                  {
-                    label: "Rate limits",
-                    value: `${balance.rate_limits.requests_per_minute}/min · ${balance.rate_limits.requests_per_day}/day`,
-                  },
-                ].map((c) => (
-                  <div key={c.label} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-                    <p className="text-xs text-zinc-500 uppercase tracking-wide">{c.label}</p>
-                    <p className="mt-2 text-lg font-medium">{c.value}</p>
-                  </div>
-                ))}
-              </section>
-            )}
-
-            {summary && (
-              <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-4">
-                <h2 className="text-lg font-medium">Usage by day (last {summary.window_days} days)</h2>
-                {summary.by_day.length === 0 ? (
-                  <p className="text-sm text-zinc-500">No usage in this window yet.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-zinc-500 border-b border-zinc-800">
-                          <th className="py-2 pr-4">Day</th>
-                          <th className="py-2 pr-4">Calls</th>
-                          <th className="py-2">Credits used</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {summary.by_day.map((row) => (
-                          <tr key={row.day} className="border-b border-zinc-900">
-                            <td className="py-2 pr-4 font-mono text-xs">{row.day}</td>
-                            <td className="py-2 pr-4">{row.usage_events}</td>
-                            <td className="py-2">{fmtCredits(row.credits_used)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-            )}
-
-            {summary && (
-              <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-4">
-                <h2 className="text-lg font-medium">Top endpoints</h2>
-                {topEndpoints.length === 0 ? (
-                  <p className="text-sm text-zinc-500">No structured endpoint data yet (older rows may lack route templates).</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-zinc-500 border-b border-zinc-800">
-                          <th className="py-2 pr-4">Route</th>
-                          <th className="py-2 pr-4">Method</th>
-                          <th className="py-2 pr-4">Calls</th>
-                          <th className="py-2">Credits</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {topEndpoints.map((row) => (
-                          <tr
-                            key={`${row.http_method}:${row.route_template}`}
-                            className="border-b border-zinc-900"
-                          >
-                            <td className="py-2 pr-4 font-mono text-xs">{row.route_template}</td>
-                            <td className="py-2 pr-4">{row.http_method}</td>
-                            <td className="py-2 pr-4">{row.call_count}</td>
-                            <td className="py-2">{fmtCredits(row.credits_used)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-            )}
-
-            <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-4">
-              <h2 className="text-lg font-medium">Recent activity</h2>
-              {recent.length === 0 ? (
-                <p className="text-sm text-zinc-500">No transactions yet.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-zinc-500 border-b border-zinc-800">
-                        <th className="py-2 pr-4">Time</th>
-                        <th className="py-2 pr-4">Type</th>
-                        <th className="py-2 pr-4">Route</th>
-                        <th className="py-2 pr-4">Source</th>
-                        <th className="py-2">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recent.map((row) => (
-                        <tr key={row.id} className="border-b border-zinc-900">
-                          <td className="py-2 pr-4 font-mono text-xs whitespace-nowrap">
-                            {row.created_at.replace("T", " ").slice(0, 19)}
-                          </td>
-                          <td className="py-2 pr-4">{row.type}</td>
-                          <td className="py-2 pr-4 font-mono text-xs max-w-xs truncate">
-                            {row.route_template ?? row.description ?? "—"}
-                          </td>
-                          <td className="py-2 pr-4">{row.client_source ?? "—"}</td>
-                          <td className="py-2">{fmtCredits(row.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+          {balance && (
+            <section className="grid sm:grid-cols-3 gap-4">
+              {[
+                { label: "Balance", value: fmtCredits(balance.credit_balance), accent: true },
+                { label: "Credits used (lifetime)", value: fmtCredits(balance.total_credits_used), accent: false },
+                {
+                  label: "Rate limits",
+                  value: `${balance.rate_limits.requests_per_minute}/min · ${balance.rate_limits.requests_per_day}/day`,
+                  accent: false,
+                },
+              ].map((c) => (
+                <div key={c.label} className="pl-card p-6">
+                  <p className="pl-stat-label mb-2">{c.label}</p>
+                  <p className={`pl-stat-value text-xl sm:text-2xl ${c.accent ? "pl-stat-value-accent" : ""}`}>
+                    {c.value}
+                  </p>
                 </div>
+              ))}
+            </section>
+          )}
+
+          {summary && (
+            <section className="pl-card p-6 space-y-4">
+              <h2 className="pl-section-title">Usage by day (last {summary.window_days} days)</h2>
+              {summary.by_day.length === 0 ? (
+                <p className="text-sm text-pl-text-muted">No usage in this window yet.</p>
+              ) : (
+                <DataTable
+                  headers={["Day", "Calls", "Credits used"]}
+                  rows={summary.by_day.map((row) => [
+                    <span key="d" className="font-mono text-xs text-white">{row.day}</span>,
+                    row.usage_events,
+                    fmtCredits(row.credits_used),
+                  ])}
+                />
               )}
             </section>
+          )}
 
-            <p className="text-sm text-zinc-500">
-              Top up: <code className="text-zinc-400">bds-agent credits topup</code> or{" "}
-              <a href="/credits/plans" className="text-violet-400 hover:underline">
-                view plans
-              </a>
-              .
-            </p>
-          </>
-        )}
-      </main>
-    </div>
+          {summary && (
+            <section className="pl-card p-6 space-y-4">
+              <h2 className="pl-section-title">Top endpoints</h2>
+              {topEndpoints.length === 0 ? (
+                <p className="text-sm text-pl-text-muted">
+                  No structured endpoint data yet (older rows may lack route templates).
+                </p>
+              ) : (
+                <DataTable
+                  headers={["Route", "Method", "Calls", "Credits"]}
+                  rows={topEndpoints.map((row) => [
+                    <span key="r" className="font-mono text-xs text-white break-all">{row.route_template}</span>,
+                    row.http_method,
+                    row.call_count,
+                    fmtCredits(row.credits_used),
+                  ])}
+                />
+              )}
+            </section>
+          )}
+
+          <section className="pl-card p-6 space-y-4">
+            <h2 className="pl-section-title">Recent activity</h2>
+            {recent.length === 0 ? (
+              <p className="text-sm text-pl-text-muted">No transactions yet.</p>
+            ) : (
+              <DataTable
+                headers={["Time", "Type", "Route", "Source", "Amount"]}
+                rows={recent.map((row) => [
+                  <span key="t" className="font-mono text-xs text-white whitespace-nowrap">
+                    {row.created_at.replace("T", " ").slice(0, 19)}
+                  </span>,
+                  row.type,
+                  <span key="route" className="font-mono text-xs text-white max-w-xs truncate block">
+                    {row.route_template ?? row.description ?? "—"}
+                  </span>,
+                  row.client_source ?? "—",
+                  fmtCredits(row.amount),
+                ])}
+              />
+            )}
+          </section>
+
+          <p className="text-sm text-pl-text-muted font-mono">
+            Top up: bds-agent credits topup ·{" "}
+            <a href="/credits/plans" className="text-pl-accent hover:underline">
+              view plans
+            </a>
+          </p>
+        </>
+      )}
+    </MeteringShell>
   );
 }

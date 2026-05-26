@@ -296,6 +296,10 @@ function parseCreditPlansBundleFromEnv(termsVersion: string): CreditPlansBundle 
   }
 }
 
+/** Default advertised + enforced limits for new API keys (override via env). */
+export const DEFAULT_RATE_LIMIT_RPM = 120;
+export const DEFAULT_RATE_LIMIT_RPD = 1_000_000;
+
 export type AppConfig = {
   port: number;
   baseUrl: string;
@@ -321,6 +325,9 @@ export type AppConfig = {
   creditPlansFallback: CreditPlansBundle;
   /** `db` = use SQLite `credit_plans` when non-empty; `env` = always use fallback only. */
   creditPlansSource: "db" | "env";
+  /** Default rpm/rpd minted on new api_keys rows and used to bump legacy 60/1000 rows. */
+  defaultRateLimitRpm: number;
+  defaultRateLimitRpd: number;
   /** Max on-chain top-up attempts per API key per rolling minute (spam guard). */
   creditTopupRatePerMinute: number;
   /** Full chain rows: `rpc_url` for server verification; optional `public_rpc_url` for API responses. */
@@ -426,6 +433,14 @@ export function loadConfig(): AppConfig {
     creditPerStreamSession: Math.max(1e-12, envNumber("CREDIT_PER_STREAM_SESSION", 0.01)),
     creditPlansFallback,
     creditPlansSource,
+    defaultRateLimitRpm: Math.max(
+      1,
+      Math.round(envNumber("DEFAULT_RATE_LIMIT_RPM", DEFAULT_RATE_LIMIT_RPM)),
+    ),
+    defaultRateLimitRpd: Math.max(
+      1,
+      Math.round(envNumber("DEFAULT_RATE_LIMIT_RPD", DEFAULT_RATE_LIMIT_RPD)),
+    ),
     creditTopupRatePerMinute: Math.max(1, Math.min(120, Math.round(envNumber("CREDIT_TOPUP_RATE_PER_MINUTE", 10)))),
     paymentChains,
     paymentChainsPrimaryId,

@@ -28,8 +28,8 @@ CREATE TABLE IF NOT EXISTS api_keys (
   credit_balance REAL NOT NULL DEFAULT 10.0,
   total_credits_purchased REAL NOT NULL DEFAULT 0,
   total_credits_used REAL NOT NULL DEFAULT 0,
-  rate_limit_rpm INTEGER NOT NULL DEFAULT 60,
-  rate_limit_rpd INTEGER NOT NULL DEFAULT 1000,
+  rate_limit_rpm INTEGER NOT NULL DEFAULT 120,
+  rate_limit_rpd INTEGER NOT NULL DEFAULT 1000000,
   created_at TEXT NOT NULL,
   revoked_at TEXT,
   payer_address TEXT

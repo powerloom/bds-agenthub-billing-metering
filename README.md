@@ -70,7 +70,7 @@ Example file: `config/payment-chains.example.json` in this repo (copy to your se
    - **Interactive:** `npm run admin` / `… menu` / `… plan wizard` / `… key rlimits` (with no id — prompts for UUID, rpm, rpd)
    - **Non-interactive:** `… plan list` / `plan get` / `plan set-active` / `plan delete` / `key list` / `key rlimits <id> <rpm> <rpd>`
    - **JSON upsert (advanced):** `… plan upsert ./row.json` (or `… upsert -` for stdin) — same fields as a `credit_plans` row: `id`, `chain_id`, `credits`, `token_amount`, `token_contract`, `token_decimals`, `label`, `description`, `sort_order`, `token_symbol`, optional `offer`, `active`, `rpc_url`, `recipient`, `payment_kind` (`erc20` | `native_value`).
-   - Advertised rate limits (returned on `GET /credits/balance`) live on `api_keys.rate_limit_rpm` / `rate_limit_rpd`.
+   - Advertised rate limits (returned on `GET /credits/balance`) live on `api_keys.rate_limit_rpm` / `rate_limit_rpd`. Defaults: **120/min**, **1,000,000/day** (`DEFAULT_RATE_LIMIT_RPM` / `DEFAULT_RATE_LIMIT_RPD`). Enforced on `POST /internal/billing/deduct` (Core API `/mpp/` traffic); returns **429** with `Retry-After` when exceeded.
 5. **Chain 7869 must be in payment config** (`PAYMENT_CHAINS_JSON(_FILE)`) with RPC + `recipient`, or the API will not expose or verify that chain even if a plan row exists.
 6. **Optional:** set `CREDIT_PLANS_SOURCE=env` and provide plans only via `CREDIT_PLANS_JSON` (advanced; most deployments use the DB + seed).
 
@@ -81,7 +81,7 @@ The repo includes a **Powerloom 7869 native (CGT)** example row in `seed-credit-
 - **Public**: `GET /credits/balance`, `GET /credits/usage`, `GET /credits/usage/summary?days=7`, `GET /credits/usage/by-endpoint?days=30&limit=50` — same API key auth as balance. Usage rows include `route_template`, `client_source` when Core API sends structured deduct metadata.
 - **Account UI**: `GET /metering/account` — paste API key (sessionStorage); shows balance, usage-by-day, top endpoints, recent ledger.
 - **Signup bonus:** `FREE_TIER_CREDITS` (default **2**) credits on first successful `/verify` — override in env.
-- **Internal** (Core API only): `POST /internal/billing/deduct` — header `X-BDS-Internal-Billing-Secret` (must match env `INTERNAL_BILLING_SECRET`), forward the client’s `Authorization: Bearer sk_live_...`, JSON body `{ path, method, route_template?, client_source? }`. Deducts `CREDIT_PER_STREAM_SESSION` for `/mpp/stream/...`, else `CREDIT_PER_EPOCH` (default **`10/7200`** credits per snapshot GET — i.e. **1 credit ≈ 720** such GETs at default pricing). Returns **402** if insufficient credits.
+- **Internal** (Core API only): `POST /internal/billing/deduct` — header `X-BDS-Internal-Billing-Secret` (must match env `INTERNAL_BILLING_SECRET`), forward the client’s `Authorization: Bearer sk_live_...`, JSON body `{ path, method, route_template?, client_source? }`. Deducts `CREDIT_PER_STREAM_SESSION` for `/mpp/stream/...`, else `CREDIT_PER_EPOCH` (default **`10/7200`** credits per snapshot GET — i.e. **1 credit ≈ 720** such GETs at default pricing). Returns **402** if insufficient credits, **429** if per-key rate limit exceeded.
 
 Configure Core API with `MPP_BILLING_MODE=signup_api`, `MPP_SIGNUP_BILLING_URL`, `MPP_INTERNAL_BILLING_SECRET` (same value as signup server), optional `MPP_ENDPOINTS_CATALOG_JSON` for route-template matching (defaults to pinned `snapshotter-computes` `api/endpoints.json` on GitHub).
 

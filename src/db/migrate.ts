@@ -1,4 +1,5 @@
 import { PAY_RAIL_PLACEHOLDER_SESSION_ID } from "../lib/pay-rail.js";
+import { DEFAULT_RATE_LIMIT_RPD, DEFAULT_RATE_LIMIT_RPM } from "../config.js";
 import type { SqliteDb } from "../types.js";
 
 function tableExists(db: SqliteDb, name: string): boolean {
@@ -283,6 +284,7 @@ export function migrateIfNeeded(db: SqliteDb): void {
   }
   renameCreditTransactionsTempoToCanonical(db);
   ensureCreditTransactionsUsageColumns(db);
+  bumpLegacyDefaultRateLimits(db);
   ensureApiKeyRecoveryChallengesTable(db);
   dropApiKeyRawColumnIfExists(db);
   ensureUniqueApiKeysDeviceSession(db);
@@ -309,6 +311,18 @@ function ensureCreditTransactionsUsageColumns(db: SqliteDb): void {
     CREATE INDEX IF NOT EXISTS idx_credit_tx_usage_endpoint
       ON credit_transactions(api_key_id, type, route_template, created_at)
   `);
+}
+
+/** Keys still on the original 60/1000 defaults get the current product defaults on upgrade. */
+function bumpLegacyDefaultRateLimits(db: SqliteDb): void {
+  if (!tableExists(db, "api_keys")) {
+    return;
+  }
+  db.prepare(
+    `UPDATE api_keys
+     SET rate_limit_rpm = ?, rate_limit_rpd = ?
+     WHERE rate_limit_rpm = 60 AND rate_limit_rpd = 1000 AND revoked_at IS NULL`,
+  ).run(DEFAULT_RATE_LIMIT_RPM, DEFAULT_RATE_LIMIT_RPD);
 }
 
 /** Remove legacy plaintext column if present (SQLite 3.35+ DROP COLUMN). */

@@ -39,6 +39,8 @@ function testConfig(): AppConfig {
       },
     },
     creditPlansSource: "db",
+    defaultRateLimitRpm: 120,
+    defaultRateLimitRpd: 1_000_000,
     creditTopupRatePerMinute: 10,
     paymentChains: [],
     paymentChainsPrimaryId: 42431,
@@ -49,10 +51,16 @@ function testConfig(): AppConfig {
   };
 }
 
-function seedApiKey(db: ReturnType<typeof openDb>, balance = 10): { id: string; rawKey: string } {
+function seedApiKey(
+  db: ReturnType<typeof openDb>,
+  balance = 10,
+  limits: { rpm?: number; rpd?: number } = {},
+): { id: string; rawKey: string } {
   const rawKey = randomApiKey();
   const id = "key-test-1";
   const now = new Date().toISOString();
+  const rpm = limits.rpm ?? 120;
+  const rpd = limits.rpd ?? 1_000_000;
   db.prepare(
     `INSERT INTO signup_sessions (
        id, email, agent_name, session_token_hash, session_token_raw, user_code,
@@ -63,8 +71,8 @@ function seedApiKey(db: ReturnType<typeof openDb>, balance = 10): { id: string; 
     `INSERT INTO api_keys (
        id, session_id, email, api_key_hash, org_id, credit_balance,
        total_credits_purchased, total_credits_used, rate_limit_rpm, rate_limit_rpd, created_at
-     ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 60, 1000, ?)`,
-  ).run(id, id, "test@example.com", sha256Hex(rawKey), "org_test", balance, now);
+     ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`,
+  ).run(id, id, "test@example.com", sha256Hex(rawKey), "org_test", balance, rpm, rpd, now);
   return { id, rawKey };
 }
 
@@ -120,6 +128,36 @@ test("deduct persists structured usage and summary rolls up by endpoint", async 
     headers: { Authorization: `Bearer ${rawKey}` },
   });
   assert.equal(byEndpointRes.status, 200);
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("deduct enforces per-key rate limits before charging credits", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "metering-rl-"));
+  const dbPath = join(dir, "test.db");
+  const db = openDb(dbPath);
+  const config = testConfig();
+  const app = createApp(db, config);
+  const { rawKey } = seedApiKey(db, 10, { rpm: 2, rpd: 100 });
+
+  const deduct = () =>
+    app.request("http://test/internal/billing/deduct", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${rawKey}`,
+        "X-BDS-Internal-Billing-Secret": config.internalBillingSecret,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ path: "/mpp/snapshot/allTrades/1", method: "GET" }),
+    });
+
+  assert.equal((await deduct()).status, 200);
+  assert.equal((await deduct()).status, 200);
+  const limited = await deduct();
+  assert.equal(limited.status, 429);
+  const body = (await limited.json()) as { error: string; retry_after_sec: number };
+  assert.equal(body.error, "rate_limited");
+  assert.ok(body.retry_after_sec >= 1);
 
   rmSync(dir, { recursive: true, force: true });
 });

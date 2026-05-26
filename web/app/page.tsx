@@ -5,6 +5,7 @@
  * Wired to POST /signup/initiate and GET /signup/status; human completes Turnstile at GET /verify.
  */
 import { useCallback, useEffect, useState } from "react";
+import { MeteringShell } from "./components/MeteringShell";
 
 const STORAGE_KEY = "bds_metering_api_key";
 
@@ -156,192 +157,171 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
-      <header className="border-b border-zinc-800 px-6 py-4">
-        <span className="text-sm font-medium tracking-tight">Powerloom BDS</span>
-      </header>
-      <main className="flex-1 max-w-3xl mx-auto px-6 py-16 flex flex-col gap-12">
-        <section className="space-y-4">
-          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
-            Consensus-backed Uniswap V3 data for agents
-          </h1>
-          <p className="text-lg text-zinc-400">
-            Verifiable on-chain. Metered in credits. Sign up, top up, copy your API key — then plug
-            into OpenClaw / MCP in minutes.
-          </p>
-        </section>
-        <section className="grid sm:grid-cols-3 gap-3">
-          {[
-            {
-              title: "Verifiable",
-              body: "Snapshots tied to Powerloom protocol state — not a trust-me API.",
-            },
-            {
-              title: "Agent-ready",
-              body: "Bearer token + hosted MCP at bds-mcp.powerloom.io/sse.",
-            },
-            {
-              title: "POWER or USDC",
-              body: "Credit top-ups on EVM rails (same service as this page).",
-            },
-          ].map((c) => (
-            <div
-              key={c.title}
-              className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4"
-            >
-              <h2 className="font-medium text-zinc-100">{c.title}</h2>
-              <p className="mt-2 text-sm text-zinc-400">{c.body}</p>
-            </div>
-          ))}
-        </section>
+    <MeteringShell
+      title="BDS Metering"
+      subtitle="Sign up · credits · agent API access"
+      activeNav="signup"
+      maxWidth="3xl"
+    >
+      <section className="space-y-3">
+        <p className="text-base sm:text-lg text-pl-text-muted leading-relaxed">
+          Verifiable on-chain Uniswap V3 data for agents. Metered in credits — sign up, top up, copy
+          your API key, then plug into OpenClaw or hosted MCP.
+        </p>
+      </section>
 
-        {err && (
-          <div className="rounded-lg border border-red-900/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">
-            {err}
+      <section className="grid sm:grid-cols-3 gap-4">
+        {[
+          {
+            title: "Verifiable",
+            body: "Snapshots tied to Powerloom protocol state — not a trust-me API.",
+          },
+          {
+            title: "Agent-ready",
+            body: "Bearer token + hosted MCP at bds-mcp.powerloom.io/sse.",
+          },
+          {
+            title: "POWER or USDC",
+            body: "Credit top-ups on EVM rails (same service as this page).",
+          },
+        ].map((c) => (
+          <div key={c.title} className="pl-card p-4">
+            <h2 className="font-orbitron text-sm font-semibold text-white">{c.title}</h2>
+            <p className="mt-2 text-sm text-pl-text-muted">{c.body}</p>
           </div>
-        )}
+        ))}
+      </section>
 
-        {phase.kind === "done" ? (
-          <section className="rounded-xl border border-emerald-900/50 bg-emerald-950/30 p-6 space-y-4">
-            <h2 className="text-xl font-semibold text-emerald-100">Your API key</h2>
-            <p className="text-sm text-zinc-400">
-              Copy it now — for security we only show it once in this flow. Org:{" "}
-              <code className="text-zinc-300">{phase.orgId}</code> · limits{" "}
-              {phase.rateLimits.requests_per_minute}/min, {phase.rateLimits.requests_per_day}/day
-            </p>
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-              <code className="block flex-1 break-all rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm">
-                {phase.key}
-              </code>
+      {err && (
+        <div className="rounded-lg border-2 border-red-800/80 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+          {err}
+        </div>
+      )}
+
+      {phase.kind === "done" ? (
+        <section className="pl-card p-6 space-y-4 border-pl-accent/40">
+          <h2 className="pl-section-title text-pl-accent">Your API key</h2>
+          <p className="text-sm text-pl-text-muted">
+            Copy it now — for security we only show it once in this flow. Org:{" "}
+            <code className="font-mono text-white">{phase.orgId}</code> · limits{" "}
+            {phase.rateLimits.requests_per_minute}/min, {phase.rateLimits.requests_per_day}/day
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <code className="block flex-1 break-all rounded-lg border-2 border-pl-border bg-pl-bg-input px-3 py-2 text-sm font-mono">
+              {phase.key}
+            </code>
+            <button type="button" className="pl-btn-primary shrink-0" onClick={() => void navigator.clipboard.writeText(phase.key)}>
+              Copy
+            </button>
+          </div>
+          <p className="text-sm text-pl-text-muted font-mono">
+            Set POWERLOOM_API_KEY in your shell or OpenClaw env.
+          </p>
+          <a
+            href="/metering/account"
+            className="inline-block pl-btn-secondary"
+            onClick={() => {
+              try {
+                sessionStorage.setItem(STORAGE_KEY, phase.key);
+              } catch {
+                /* ignore */
+              }
+            }}
+          >
+            View usage →
+          </a>
+        </section>
+      ) : (
+        <section id="signup" className="pl-card p-6 space-y-4">
+          <h2 className="pl-section-title">Sign up & top up</h2>
+          <p className="text-sm text-pl-text-muted font-mono leading-relaxed">
+            POST /signup/initiate → browser verify (Turnstile + terms) → GET /signup/status. CLI:{" "}
+            bds-agent signup against https://bds-metering.powerloom.io
+          </p>
+
+          {phase.kind === "verify" && (
+            <div className="rounded-lg border-2 border-pl-accent/30 bg-pl-bg-elevated px-4 py-3 space-y-3 text-sm">
+              <p className="text-white">
+                <strong>Next:</strong> open verification, complete the captcha and terms, then keep
+                this tab open.
+              </p>
+              <p>
+                Your code:{" "}
+                <code className="text-lg font-mono tracking-wide text-pl-accent">
+                  {phase.data.user_code}
+                </code>
+              </p>
+              <a
+                href={`/verify?code=${encodeURIComponent(phase.data.user_code)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block pl-btn-primary"
+              >
+                Open verification page
+              </a>
+              <p className="text-pl-text-muted font-mono text-xs">Waiting for verification…</p>
               <button
                 type="button"
-                className="rounded-lg bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 shrink-0"
-                onClick={() => void navigator.clipboard.writeText(phase.key)}
+                className="text-sm text-pl-text-muted underline hover:text-white"
+                onClick={() => {
+                  setPhase({ kind: "idle" });
+                  setErr(null);
+                }}
               >
-                Copy
+                Cancel and start over
               </button>
             </div>
-            <p className="text-sm text-zinc-500">
-              Set <code className="text-zinc-400">POWERLOOM_API_KEY</code> to this value in your shell or
-              OpenClaw env.
-            </p>
-            <a
-              href="/metering/account"
-              className="inline-block rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-zinc-900"
-              onClick={() => {
-                try {
-                  sessionStorage.setItem(STORAGE_KEY, phase.key);
-                } catch {
-                  /* ignore */
-                }
-              }}
-            >
-              View usage →
-            </a>
-          </section>
-        ) : (
-          <section id="signup" className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-4">
-            <h2 className="text-xl font-semibold">Sign up & top up</h2>
-            <p className="text-sm text-zinc-400">
-              We call <code className="text-zinc-300">POST /signup/initiate</code> on this origin.
-              After you verify in the browser (Turnstile + terms), we poll{" "}
-              <code className="text-zinc-300">GET /signup/status</code> and show your key here. CLI:{" "}
-              <code className="text-zinc-300">bds-agent signup</code> against{" "}
-              <code className="text-zinc-300">https://bds-metering.powerloom.io</code>.
-            </p>
+          )}
 
-            {phase.kind === "verify" && (
-              <div className="rounded-lg border border-amber-900/40 bg-amber-950/25 px-4 py-3 space-y-2 text-sm">
-                <p className="text-amber-100/90">
-                  <strong>Next:</strong> open verification, complete the captcha and terms, then keep
-                  this tab open.
-                </p>
-                <p>
-                  Your code:{" "}
-                  <code className="text-lg font-mono tracking-wide text-amber-200">
-                    {phase.data.user_code}
-                  </code>
-                </p>
-                <a
-                  href={`/verify?code=${encodeURIComponent(phase.data.user_code)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-500"
-                >
-                  Open verification page
-                </a>
-                <p className="text-zinc-500">Waiting for verification…</p>
-                <button
-                  type="button"
-                  className="text-sm text-zinc-500 underline hover:text-zinc-300"
-                  onClick={() => {
-                    setPhase({ kind: "idle" });
-                    setErr(null);
-                  }}
-                >
-                  Cancel and start over
-                </button>
-              </div>
-            )}
-
-            <form onSubmit={onSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm text-zinc-400" htmlFor="email">
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={submitting || phase.kind === "verify"}
-                  required
-                  autoComplete="email"
-                />
-                {fieldErr?.email && (
-                  <p className="mt-1 text-sm text-red-400">{fieldErr.email}</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm text-zinc-400" htmlFor="agent">
-                  Agent name
-                </label>
-                <input
-                  id="agent"
-                  type="text"
-                  className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100"
-                  placeholder="my-openclaw-agent"
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                  disabled={submitting || phase.kind === "verify"}
-                  required
-                  pattern="[a-zA-Z0-9_-]{1,64}"
-                  title="1–64 characters: letters, digits, underscore, hyphen"
-                  autoComplete="off"
-                />
-                {fieldErr?.agent_name && (
-                  <p className="mt-1 text-sm text-red-400">{fieldErr.agent_name}</p>
-                )}
-              </div>
-              <button
-                type="submit"
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div>
+              <label className="pl-label mb-2" htmlFor="email">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                className="pl-input"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 disabled={submitting || phase.kind === "verify"}
-                className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
-              >
-                {submitting ? "Starting…" : phase.kind === "verify" ? "Continue below" : "Continue"}
-              </button>
-            </form>
-          </section>
-        )}
+                required
+                autoComplete="email"
+              />
+              {fieldErr?.email && <p className="mt-1 text-sm text-red-400">{fieldErr.email}</p>}
+            </div>
+            <div>
+              <label className="pl-label mb-2" htmlFor="agent">
+                Agent name
+              </label>
+              <input
+                id="agent"
+                type="text"
+                className="pl-input"
+                placeholder="my-openclaw-agent"
+                value={agentName}
+                onChange={(e) => setAgentName(e.target.value)}
+                disabled={submitting || phase.kind === "verify"}
+                required
+                pattern="[a-zA-Z0-9_-]{1,64}"
+                title="1–64 characters: letters, digits, underscore, hyphen"
+                autoComplete="off"
+              />
+              {fieldErr?.agent_name && (
+                <p className="mt-1 text-sm text-red-400">{fieldErr.agent_name}</p>
+              )}
+            </div>
+            <button type="submit" disabled={submitting || phase.kind === "verify"} className="pl-btn-primary disabled:opacity-50">
+              {submitting ? "Starting…" : phase.kind === "verify" ? "Continue below" : "Continue"}
+            </button>
+          </form>
+        </section>
+      )}
 
-        <p className="text-sm text-zinc-500">
-          ClawHub skill: <code className="text-zinc-300">powerloom-bds-univ3</code>. Top-up:{" "}
-          <code className="text-zinc-300">https://bds-metering.powerloom.io/metering</code> (this
-          page).
-        </p>
-      </main>
-    </div>
+      <p className="text-sm text-pl-text-muted font-mono">
+        ClawHub: powerloom-bds-univ3 · bds-metering.powerloom.io/metering
+      </p>
+    </MeteringShell>
   );
 }
