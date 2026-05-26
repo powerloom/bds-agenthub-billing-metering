@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import Database from "better-sqlite3";
 import { openDb } from "./db/client.js";
 import { createApp } from "./app.js";
 import type { AppConfig } from "./config.js";
@@ -136,5 +137,43 @@ test("migrate adds usage columns idempotently", () => {
   assert.ok(names.has("route_template"));
   assert.ok(names.has("client_source"));
   db2.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("openDb upgrades legacy credit_transactions without usage columns", () => {
+  const dir = mkdtempSync(join(tmpdir(), "metering-legacy-"));
+  const dbPath = join(dir, "legacy.db");
+  const legacy = new Database(dbPath);
+  legacy.exec(`
+    CREATE TABLE credit_transactions (
+      id TEXT PRIMARY KEY,
+      api_key_id TEXT NOT NULL,
+      amount REAL NOT NULL,
+      type TEXT NOT NULL,
+      description TEXT,
+      tx_hash TEXT,
+      chain_id INTEGER,
+      plan_id TEXT,
+      created_at TEXT NOT NULL
+    );
+  `);
+  legacy.close();
+
+  const db = openDb(dbPath);
+  const cols = db
+    .prepare(`PRAGMA table_info(credit_transactions)`)
+    .all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  assert.ok(names.has("route_template"));
+  assert.ok(names.has("client_source"));
+
+  const idx = db
+    .prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_credit_tx_usage_endpoint'`,
+    )
+    .get() as { name: string } | undefined;
+  assert.ok(idx?.name === "idx_credit_tx_usage_endpoint");
+
+  db.close();
   rmSync(dir, { recursive: true, force: true });
 });
