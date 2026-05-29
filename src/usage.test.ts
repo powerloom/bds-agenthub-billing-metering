@@ -133,6 +133,35 @@ test("deduct persists structured usage and summary rolls up by endpoint", async 
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("deduct applies catalog credit_weight against CREDIT_PER_EPOCH", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "metering-weight-"));
+  const dbPath = join(dir, "test.db");
+  const db = openDb(dbPath);
+  const config = testConfig();
+  const app = createApp(db, config);
+  const { rawKey } = seedApiKey(db, 1);
+
+  const res = await app.request("http://test/internal/billing/deduct", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${rawKey}`,
+      "X-BDS-Internal-Billing-Secret": config.internalBillingSecret,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      path: "/mpp/tokenPrices/all/0xabc/21900123",
+      method: "GET",
+      route_template: "/mpp/tokenPrices/all/{token_address}/{block_number}",
+      credit_weight: 10,
+    }),
+  });
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as { amount_charged: number };
+  assert.equal(body.amount_charged, config.creditPerEpoch * 10);
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("syncRateLimitDefaultsFromConfig updates legacy and built-in default key pairs", () => {
   const dir = mkdtempSync(join(tmpdir(), "metering-rl-sync-"));
   const dbPath = join(dir, "test.db");

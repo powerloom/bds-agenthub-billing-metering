@@ -6,12 +6,30 @@ import { buildUsageMetadata } from "../lib/usage-metadata.js";
 import { createUsageRateLimiter } from "../lib/usage-rate-limit.js";
 import type { SqliteDb } from "../types.js";
 
-function deductAmountForPath(config: AppConfig, path: string): number {
+const MAX_CREDIT_WEIGHT = 1000;
+
+function parseCreditWeight(raw: unknown): number {
+  if (raw === undefined || raw === null || raw === "") {
+    return 1;
+  }
+  const w = Number(raw);
+  if (!Number.isFinite(w) || w <= 0) {
+    return 1;
+  }
+  return Math.min(w, MAX_CREDIT_WEIGHT);
+}
+
+/** Debit = CREDIT_PER_EPOCH × catalog credit_weight (from Core API). Stream uses flat session rate. */
+function deductAmountForRequest(
+  config: AppConfig,
+  path: string,
+  creditWeightRaw: unknown,
+): number {
   const p = path.startsWith("/") ? path : `/${path}`;
   if (p.startsWith("/mpp/stream/")) {
     return config.creditPerStreamSession;
   }
-  return config.creditPerEpoch;
+  return config.creditPerEpoch * parseCreditWeight(creditWeightRaw);
 }
 
 export function createInternalBillingRoutes(db: SqliteDb, config: AppConfig) {
@@ -71,7 +89,11 @@ export function createInternalBillingRoutes(db: SqliteDb, config: AppConfig) {
       );
     }
 
-    const amount = deductAmountForPath(config, usage.requestPath || "/mpp/snapshot");
+    const amount = deductAmountForRequest(
+      config,
+      usage.requestPath || "/mpp/snapshot",
+      obj.credit_weight,
+    );
     if (!Number.isFinite(amount) || amount <= 0) {
       return c.json({ error: "config_error", message: "Invalid credit amounts in server config" }, 500);
     }
