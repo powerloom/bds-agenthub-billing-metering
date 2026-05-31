@@ -79,6 +79,8 @@ export function createInternalBillingRoutes(db: SqliteDb, config: AppConfig) {
       method: obj.method,
       route_template: obj.route_template,
       client_source: obj.client_source,
+      history_multiplier: obj.history_multiplier,
+      lookback_seconds: obj.lookback_seconds,
     });
 
     const row = lookupApiKey(db, raw);

@@ -42,12 +42,17 @@ export function resolveRouteTemplate(routeTemplate: unknown, requestPath: string
   return "unknown";
 }
 
-export function buildUsageMetadata(body: {
+export type DeductRequestBody = {
   path?: unknown;
   method?: unknown;
   route_template?: unknown;
   client_source?: unknown;
-}): DeductUsageMetadata {
+  credit_weight?: unknown;
+  history_multiplier?: unknown;
+  lookback_seconds?: unknown;
+};
+
+export function buildUsageMetadata(body: DeductRequestBody): DeductUsageMetadata {
   const requestPath = normalizePath(typeof body.path === "string" ? body.path : "");
   const httpMethod = normalizeMethod(typeof body.method === "string" ? body.method : "");
   const routeTemplate = resolveRouteTemplate(body.route_template, requestPath);
