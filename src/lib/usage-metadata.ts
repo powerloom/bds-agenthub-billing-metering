@@ -53,7 +53,19 @@ export function buildUsageMetadata(body: {
   const routeTemplate = resolveRouteTemplate(body.route_template, requestPath);
   const clientSource = normalizeClientSource(body.client_source);
   const pathForDesc = requestPath || "unknown";
-  const description = `usage ${httpMethod} ${pathForDesc}`.slice(0, 500);
+  let description = `usage ${httpMethod} ${pathForDesc}`;
+  const lookback =
+    typeof body.lookback_seconds === "number" && Number.isFinite(body.lookback_seconds)
+      ? body.lookback_seconds
+      : null;
+  const historyMult =
+    typeof body.history_multiplier === "number" && Number.isFinite(body.history_multiplier)
+      ? body.history_multiplier
+      : null;
+  if (lookback != null && historyMult != null && historyMult > 1) {
+    description += ` lookback=${lookback}s hist_mult=${historyMult}`;
+  }
+  description = description.slice(0, 500);
 
   return {
     httpMethod,

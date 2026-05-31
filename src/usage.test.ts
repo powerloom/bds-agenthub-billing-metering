@@ -162,6 +162,38 @@ test("deduct applies catalog credit_weight against CREDIT_PER_EPOCH", async () =
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("deduct applies credit_weight and history_multiplier for timeSeries lookback", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "metering-hist-"));
+  const dbPath = join(dir, "test.db");
+  const db = openDb(dbPath);
+  const config = testConfig();
+  const app = createApp(db, config);
+  const { rawKey } = seedApiKey(db, 1);
+
+  const res = await app.request("http://test/internal/billing/deduct", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${rawKey}`,
+      "X-BDS-Internal-Billing-Secret": config.internalBillingSecret,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      path: "/mpp/timeSeries/0xtoken/0xpool/86400/144",
+      method: "GET",
+      route_template:
+        "/mpp/timeSeries/{token_address}/{pool_address}/{time_interval}/{step_seconds}",
+      credit_weight: 5,
+      history_multiplier: 4,
+      lookback_seconds: 86400,
+    }),
+  });
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as { amount_charged: number };
+  assert.equal(body.amount_charged, config.creditPerEpoch * 5 * 4);
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("syncRateLimitDefaultsFromConfig updates legacy and built-in default key pairs", () => {
   const dir = mkdtempSync(join(tmpdir(), "metering-rl-sync-"));
   const dbPath = join(dir, "test.db");
